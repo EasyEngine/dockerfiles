@@ -245,9 +245,10 @@ fi
 U_ID=${USER_ID}
 G_ID=${GROUP_ID}
 
-usermod -u $U_ID www-data
-groupmod -g $G_ID www-data
-
-chown -R www-data:www-data /var/
+if [[ "$U_ID" =~ "0" ]];then
+	usermod -u $U_ID www-data
+	groupmod -g $G_ID www-data
+	chown -R www-data:www-data /var/
+fi
 
 exec "$@"
