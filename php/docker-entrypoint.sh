@@ -234,7 +234,6 @@ if (!$mysql->query('CREATE DATABASE IF NOT EXISTS `' . $mysql->real_escape_strin
 
 $mysql->close();
 EOPHP
-curl -o /var/www/html/wp-content/object-cache.php -L https://gist.githubusercontent.com/dharmin/a22dd3ec2008878b2196a6326a7fd0c4/raw/47196c4313137b69e6ae9376503e4ed5bd3913b8/object-cache.php
 	fi
 
 	# now that we're definitely done writing configuration, let's clear out the relevant envrionment variables (so that stray "phpinfo()" calls don't leak secrets from our code)
