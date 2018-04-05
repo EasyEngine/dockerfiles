@@ -12,7 +12,7 @@ RUN set -ex; \
 		libmcrypt-dev \
 		libzip-dev \
 		mysql-client \
-		ssmtp
+		ssmtp \
 		unzip \
 		zip
 
