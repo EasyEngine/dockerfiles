@@ -37,8 +37,7 @@ mkdir -p /app/ee4/nginx/conf.d
 touch /app/ee4/nginx/conf.d/default.conf
 
 nginx_uid=$(id -u nginx)
-if [ \( "$U_ID" -ne 0 \) -a \( $nginx_uid -ne $U_ID \) ];then
-	echo "asdsa"
+if [[ "$U_ID" -ne 0 &&  "$nginx_uid" -ne $U_ID ]];then
 	groupmod -g $G_ID nginx
 	usermod -u $U_ID -g $G_ID nginx 
 	chown -R nginx:nginx /app/ee4
