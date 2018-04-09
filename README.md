@@ -13,5 +13,9 @@ Build status:
 | [mail](https://hub.docker.com/r/easyengine/mail/) | [![Docker Build Status](https://img.shields.io/docker/build/easyengine/mail.svg)]() |
 | [mariadb](https://hub.docker.com/r/easyengine/mariadb/) | [![Docker Build Status](https://img.shields.io/docker/build/easyengine/mariadb.svg)]() |
 | [phpmyadmin](https://hub.docker.com/r/easyengine/phpmyadmin/) | [![Docker Build Status](https://img.shields.io/docker/build/easyengine/phpmyadmin.svg)]() |
+<<<<<<< HEAD
 <<<<<<< 7e5dfdb9f489c6339dc6eef0b176158ca816f170
 | [base](https://hub.docker.com/r/easyengine/base/) | [![Docker Build Status](https://img.shields.io/docker/build/easyengine/base.svg)]() |
+=======
+| [base-ee4](https://hub.docker.com/r/easyengine/base-ee4/) | [![Docker Build Status](https://img.shields.io/docker/build/easyengine/base-ee4.svg)]() |
+>>>>>>> 20824ada03f2959dd7a7782b0b6c07542bf14a65
