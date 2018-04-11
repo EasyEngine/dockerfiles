@@ -32,7 +32,7 @@ RUN curl -o /tmp/docker-$VERSION.tgz -L https://download.docker.com/linux/static
 	&& tar -xz -C /tmp -f /tmp/docker-$VERSION.tgz \
 	&& mv /tmp/docker/docker /usr/bin \
 	&& rm -rf /tmp/docker-$VERSION /tmp/docker \
- 	&& apt-get purge -y --auto-remove $deps
+	&& apt-get purge -y --auto-remove $deps
 
 # Install Docker-compose
 ENV COMPOSE_VERSION 1.19.0
@@ -41,11 +41,8 @@ RUN curl -o /usr/local/bin/docker-compose -L \
 	&& chmod +x /usr/local/bin/docker-compose && docker-php-ext-install pcntl
 
 # Install EasyEngine v4 phar
-RUN curl https://raw.githubusercontent.com/easyengine/easyengine-builds/master/easyengine.phar -o /usr/local/bin/ee4 \
-    && chmod +x /usr/local/bin/ee4
-
-COPY ee4.phar /usr/local/bin/ee4
-RUN chmod +x /usr/local/bin/ee4
+RUN curl https://raw.githubusercontent.com/EasyEngine/easyengine-builds/master/phar/easyengine.phar -o /usr/local/bin/ee4 \
+	&& chmod +x /usr/local/bin/ee4
 
 COPY entrypoint.sh /app/entrypoint.sh
 
