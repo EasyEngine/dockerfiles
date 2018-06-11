@@ -1,4 +1,4 @@
-FROM wordpress:php7.2-fpm
+FROM php:7.2-fpm
 
 RUN set -ex; \
 	apt-get update; \
@@ -6,10 +6,12 @@ RUN set -ex; \
 		imagemagick \
 		less \
 		libfreetype6-dev \
+		libjpeg-dev \
 		libjpeg62-turbo-dev \
 		libmagickwand-dev \
-		libmemcached-dev \
 		libmcrypt-dev \
+		libmemcached-dev \
+		libpng-dev \
 		libzip-dev \
 		mysql-client \
 		ssmtp \
@@ -65,6 +67,7 @@ RUN { \
 
 RUN echo "mailhub=mail:1025\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 COPY docker-entrypoint.sh /usr/local/bin/
+VOLUME /var/www/html
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
