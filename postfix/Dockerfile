@@ -7,14 +7,14 @@ ENV DEBIAN_FRONTEND noninteractive
 # Update
 RUN apt-get update
 
-RUN apt-get -y install supervisor postfix
+RUN apt-get -y install supervisor postfix mailutils
 RUN openssl genrsa -des3 -out test.example.com.key -passout pass:easyengine 2048 \
     && chmod 600 test.example.com.key \
-    && openssl req -new -key test.example.com.key -passin pass:easyengine -out test.example.com.csr -subj "/C=US/ST=TEXAS/L=MALEGAON/O=EasyEngine/OU=Nothing/CN=test.example.com" \
+    && openssl req -new -key test.example.com.key -passin pass:easyengine -out test.example.com.csr -subj "/C=US/ST=NY/L=Maspeth/O=EasyEngine/OU=DevOps/CN=test.example.com" \
     && openssl x509 -req -days 365 -in test.example.com.csr -signkey test.example.com.key -passin pass:easyengine -out test.example.com.crt \
     && openssl rsa -in test.example.com.key -passin pass:easyengine -out test.example.com.key.nopass  \
     && mv test.example.com.key.nopass test.example.com.key \
-    && openssl req -new -x509 -extensions v3_ca -keyout cakey.pem -passout pass:easyengine -out cacert.pem -days 3650 -subj "/C=US/ST=TEXAS/L=MALEGAON/O=EasyEngine/OU=Nothing/CN=test.example.com" \
+    && openssl req -new -x509 -extensions v3_ca -keyout cakey.pem -passout pass:easyengine -out cacert.pem -days 3650 -subj "/C=US/ST=NY/L=Maspeth/O=EasyEngine/OU=DevOps/CN=test.example.com" \
     && chmod 600 test.example.com.key \
     && chmod 600 cakey.pem \
     && mv test.example.com.key /etc/ssl/private/ \
