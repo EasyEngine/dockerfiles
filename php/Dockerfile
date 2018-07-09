@@ -66,6 +66,8 @@ RUN { \
 		} > /etc/wp-cli/config.yml
 
 RUN echo "mailhub=mail:1025\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+COPY bashrc /root/.bashrc
+COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 VOLUME /var/www/html
 
