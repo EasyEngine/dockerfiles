@@ -5,11 +5,11 @@
 		{{/* If we got the containers from swarm and this container's port is published to host, use host IP:PORT */}}
 		{{ if and .Container.Node.ID .Address.HostPort }}
 	# {{ .Container.Node.Name }}/{{ .Container.Name }}
-	server {{ .Container.Node.Address.IP }}:{{ .Address.HostPort }}/;
+	server {{ .Container.Node.Address.IP }}:{{ .Address.HostPort }};
 		{{/* If there is no swarm node or the port is not published on host, use container's IP:PORT */}}
 		{{ else if .Network }}
 	# {{ .Container.Name }}
-	server {{ .Network.IP }}:{{ .Address.Port }}/;
+	server {{ .Network.IP }}:{{ .Address.Port }};
 		{{ end }}
 	{{ else if .Network }}
 	# {{ .Container.Name }}
@@ -32,7 +32,7 @@
 		include fastcgi.conf;
 		fastcgi_pass {{ trim .Upstream }};
 	{{ else }}
-		proxy_pass {{ trim .Proto }}://{{ trim .Upstream }};
+		proxy_pass {{ trim .Proto }}://{{ trim .Upstream }}/;
 	{{ end }}
 
 	{{ if (exists (printf "/etc/nginx/htpasswd/%s" .Host)) }}
