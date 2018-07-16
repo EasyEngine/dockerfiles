@@ -1,4 +1,7 @@
 FROM php:7.2-fpm
+LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL org.label-schema.vendor="EasyEngine"
+LABEL org.label-schema.name="php"
 
 RUN set -ex; \
 	apt-get update; \
