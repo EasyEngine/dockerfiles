@@ -72,6 +72,7 @@ COPY docker-entrypoint.sh /usr/local/bin/
 
 VOLUME /var/www/htdocs
 WORKDIR /var/www/htdocs
+USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
