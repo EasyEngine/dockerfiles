@@ -62,14 +62,17 @@ RUN curl -O "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cl
 # Setup a config file
 RUN mkdir -p /etc/wp-cli
 RUN { \
-		echo 'path: /var/www/html'; \
+		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
 RUN echo "mailhub=mailhog:1025\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-VOLUME /var/www/html
+
+VOLUME /var/www/htdocs
+WORKDIR /var/www/htdocs
+USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
