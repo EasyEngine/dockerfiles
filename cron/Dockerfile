@@ -1,0 +1,1 @@
+FROM mcuadros/ofelia:latest
