@@ -1,6 +1,6 @@
 FROM debian:stretch-slim
 
-MAINTAINER Mriyam Tamuli <mbtamuli@gmail.com>
+LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
 
 
 # Build and install Postfix
