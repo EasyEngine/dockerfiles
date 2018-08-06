@@ -1,4 +1,6 @@
 FROM php:7.2-fpm
+
+LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
@@ -19,7 +21,8 @@ RUN set -ex; \
 		mysql-client \
 		ssmtp \
 		unzip \
-		zip
+		zip \
+		vim
 
 RUN pecl install imagick memcached; \
 	printf "\n" | pecl install mcrypt-1.0.1; \
@@ -68,7 +71,7 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "mailhub=mailhog:1025\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
