@@ -21,7 +21,8 @@ RUN set -ex; \
 		mysql-client \
 		ssmtp \
 		unzip \
-		zip
+		zip \
+		vim
 
 RUN pecl install imagick memcached; \
 	printf "\n" | pecl install mcrypt-1.0.1; \
