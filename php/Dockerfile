@@ -68,7 +68,7 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "mailhub=mailhog:1025\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
