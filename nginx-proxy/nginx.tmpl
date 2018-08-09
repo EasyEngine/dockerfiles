@@ -35,6 +35,12 @@
 		proxy_pass {{ trim .Proto }}://{{ trim .Upstream }}/;
 	{{ end }}
 
+	{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+	{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+		include /etc/nginx/vhost.d/default_acl;
+	{{ end }}
+
 	{{ if (exists (printf "/etc/nginx/htpasswd/%s" .Host)) }}
 		auth_basic	"Restricted {{ .Host }}";
 		auth_basic_user_file	{{ (printf "/etc/nginx/htpasswd/%s" .Host) }};
