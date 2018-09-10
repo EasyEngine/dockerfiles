@@ -31,7 +31,7 @@ RUN pecl install imagick memcached; \
 	docker-php-ext-configure zip --with-libzip; \
 	docker-php-ext-configure --with-php-config=/usr/local/bin/php-config; \
 	docker-php-ext-install gd mysqli opcache zip; \
-	docker-php-ext-enable imagick mcrypt; \
+	docker-php-ext-enable imagick mcrypt redis; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
