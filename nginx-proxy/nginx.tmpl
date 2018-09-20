@@ -341,7 +341,7 @@ server {
 			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
 				location /ee-admin/ {
 				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
+				proxy_pass http://{{ printf "%s-%s" $host $sum }}/ee-admin/;
 				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
 					auth_basic      "Restricted {{ $host }}  Admin Tools";
 					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
@@ -388,7 +388,7 @@ server {
 			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
 				location /ee-admin/ {
 				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
+				proxy_pass http://{{ printf "%s-%s" $host $sum }}/ee-admin/;
 				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
 					auth_basic      "Restricted {{ $host }}  Admin Tools";
 					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
