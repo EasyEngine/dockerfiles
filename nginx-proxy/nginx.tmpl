@@ -41,22 +41,6 @@
 		include /etc/nginx/vhost.d/default_acl;
 	{{ end }}
 
-	{{ if (hasPrefix "/ee-admin/" .Path) }}
-		{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" .Host)) }}
-			auth_basic      "Restricted {{ .Host }} Admin Tools";
-			auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" .Host) }};
-		{{ else if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
-			auth_basic      "Restricted {{ .Host }}  Admin Tools";
-			auth_basic_user_file    /etc/nginx/htpasswd/default_admin_tools;
-		{{ end }}
-	{{ else if (exists (printf "/etc/nginx/htpasswd/%s" .Host)) }}
-		auth_basic      "Restricted {{ .Host }}";
-		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s" .Host) }};
-	{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ .Host }}";
-		auth_basic_user_file    /etc/nginx/htpasswd/default;
-	{{ end }}
-
 	{{ if (exists (printf "/etc/nginx/vhost.d/%s_location" .Host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_location" .Host}};
 	{{ else if (exists "/etc/nginx/vhost.d/default_location") }}
@@ -334,14 +318,10 @@ server {
 	{{ if eq $nPaths 0 }}
 		{{ template "location" (dict "Path" "/" "Proto" $proto "Upstream" $upstream_name "Host" $host "Vhostroot" $vhost_root) }}
 	{{ else }}
-		{{ range $path, $containers := $paths }}
-			{{ $sum := sha1 $path }}
-			{{ $upstream := printf "%s-%s" $host $sum }}
-			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root) }}
 			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
 				location /ee-admin/ {
 				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
+				proxy_pass http://{{ printf "%s-%s" $host $sum }}/ee-admin/;
 				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
 					auth_basic      "Restricted {{ $host }}  Admin Tools";
 					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
@@ -351,6 +331,10 @@ server {
 				{{ end }}
 				}
 			{{ end }}
+		{{ range $path, $containers := $paths }}
+			{{ $sum := sha1 $path }}
+			{{ $upstream := printf "%s-%s" $host $sum }}
+			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root) }}
 		{{ end }}
 	{{ end }}
 }
@@ -381,23 +365,23 @@ server {
 	{{ if eq $nPaths 0 }}
 		{{ template "location" (dict "Path" "/" "Proto" $proto "Upstream" $upstream_name "Host" $host "Vhostroot" $vhost_root) }}
 	{{ else }}
+		{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
+			location /ee-admin/ {
+			{{ $sum := sha1 "/" }}
+			proxy_pass http://{{ printf "%s-%s" $host $sum }}/ee-admin/;
+			{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
+				auth_basic      "Restricted {{ $host }}  Admin Tools";
+				auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
+			{{ else if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
+				auth_basic      "Restricted {{ $host }}  Admin Tools";
+				auth_basic_user_file    "/etc/nginx/htpasswd/default_admin_tools";
+			{{ end }}
+			}
+		{{ end }}
 		{{ range $path, $containers := $paths }}
 			{{ $sum := sha1 $path }}
 			{{ $upstream := printf "%s-%s" $upstream_name $sum }}
 			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root) }}
-			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
-				location /ee-admin/ {
-				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
-				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
-				{{ else if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    "/etc/nginx/htpasswd/default_admin_tools";
-				{{ end }}
-				}
-			{{ end }}
 		{{ end }}
 	{{ end }}
 }
