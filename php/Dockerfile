@@ -76,7 +76,6 @@ COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 
-VOLUME /var/www/htdocs
 WORKDIR /var/www/htdocs
 USER www-data
 
