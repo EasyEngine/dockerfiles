@@ -338,19 +338,6 @@ server {
 			{{ $sum := sha1 $path }}
 			{{ $upstream := printf "%s-%s" $host $sum }}
 			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root) }}
-			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
-				location /ee-admin/ {
-				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
-				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
-				{{ else if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    "/etc/nginx/htpasswd/default_admin_tools";
-				{{ end }}
-				}
-			{{ end }}
 		{{ end }}
 	{{ end }}
 }
@@ -385,19 +372,6 @@ server {
 			{{ $sum := sha1 $path }}
 			{{ $upstream := printf "%s-%s" $upstream_name $sum }}
 			{{ template "location" (dict "Path" $path "Proto" $proto "Upstream" $upstream "Host" $host "Vhostroot" $vhost_root) }}
-			{{ if (or (exists (printf "/etc/nginx/vhost.d/%s_admin_tools" $host)) (exists "/etc/nginx/htpasswd/default_admin_tools")) }}
-				location /ee-admin/ {
-				{{ $sum := sha1 "/" }}
-				proxy_pass http://{{ printf "%s-%s" $host $sum }}/;
-				{{ if (exists (printf "/etc/nginx/htpasswd/%s_admin_tools" $host)) }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s_admin_tools" $host) }};
-				{{ else if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
-					auth_basic      "Restricted {{ $host }}  Admin Tools";
-					auth_basic_user_file    "/etc/nginx/htpasswd/default_admin_tools";
-				{{ end }}
-				}
-			{{ end }}
 		{{ end }}
 	{{ end }}
 }
