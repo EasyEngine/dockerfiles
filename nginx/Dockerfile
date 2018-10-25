@@ -6,4 +6,5 @@ LABEL org.label-schema.name="nginx"
 # Copy EasyEngine nginx configuration files
 RUN mkdir -p /var/log/nginx
 COPY conf /usr/local/openresty/nginx/conf
+COPY version.conf /version.conf
 EXPOSE 80
