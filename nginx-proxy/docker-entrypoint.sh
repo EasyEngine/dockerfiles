@@ -30,17 +30,4 @@ if [ "$socketMissing" = 1 -a "$1" = forego -a "$2" = start -a "$3" = '-r' ]; the
 	exit 1
 fi
 
-U_ID=${USER_ID}
-G_ID=${GROUP_ID}
-
-mkdir -p /app/ee4/nginx/conf.d
-touch /app/ee4/nginx/conf.d/default.conf
-
-nginx_uid=$(id -u nginx)
-if [[ "$U_ID" -ne 0 &&  "$nginx_uid" -ne $U_ID ]];then
-	groupmod -g $G_ID nginx
-	usermod -u $U_ID -g $G_ID nginx 
-	chown -R nginx:nginx /app/ee4
-fi
-
 exec "$@"
