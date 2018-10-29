@@ -8,7 +8,6 @@ COPY nginx.tmpl /app/
 COPY nginx.conf /etc/nginx/nginx.conf
 
 RUN apt-get update \
-    && apt-get install apache2-utils -y
+    && apt-get install --no-install-recommends apache2-utils -y && rm -rf /var/lib/apt/lists/*
 
 RUN chmod +x /app/docker-entrypoint.sh
-
