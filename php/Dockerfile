@@ -76,6 +76,7 @@ RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.c
 # Setup logs
 RUN mkdir -p /var/log/php; \
 	chown -R www-data: /var/log/php;
+COPY docker.conf /usr/local/etc/php-fpm.d/docker.conf
 
 COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
