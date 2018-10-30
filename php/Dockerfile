@@ -72,11 +72,11 @@ RUN { \
 		} > /etc/wp-cli/config.yml
 
 RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 
-VOLUME /var/www/htdocs
 WORKDIR /var/www/htdocs
 USER www-data
 
