@@ -345,8 +345,6 @@ server {
 	include /etc/nginx/vhost.d/default;
 	{{ end }}
 
-	{{ $auth := "disabled" }}
-
 	{{ if eq $nPaths 0 }}
 		{{ template "location" (dict "Path" "/" "Proto" $proto "Upstream" $upstream_name "Host" $host "Vhostroot" $vhost_root) }}
 	{{ else }}
