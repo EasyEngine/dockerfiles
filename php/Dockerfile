@@ -10,19 +10,22 @@ RUN set -ex; \
 	apt-get install -y --no-install-recommends \
 		imagemagick \
 		less \
+		libc-client-dev \
 		libfreetype6-dev \
 		libjpeg-dev \
 		libjpeg62-turbo-dev \
+		libkrb5-dev \
 		libmagickwand-dev \
 		libmcrypt-dev \
 		libmemcached-dev \
+		libxml2-dev \
 		libpng-dev \
 		libzip-dev \
 		mysql-client \
 		ssmtp \
 		unzip \
-		zip \
-		vim
+		vim \
+		zip
 
 RUN pecl install imagick memcached; \
 	printf "\n" | pecl install mcrypt-1.0.1; \
@@ -30,7 +33,8 @@ RUN pecl install imagick memcached; \
 	docker-php-ext-configure gd --with-png-dir=/usr --with-jpeg-dir=/usr; \
 	docker-php-ext-configure zip --with-libzip; \
 	docker-php-ext-configure --with-php-config=/usr/local/bin/php-config; \
-	docker-php-ext-install gd mysqli opcache zip; \
+	docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
+	docker-php-ext-install gd imap mysqli opcache soap zip; \
 	docker-php-ext-enable imagick mcrypt redis; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
