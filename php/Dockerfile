@@ -80,7 +80,8 @@ RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.c
 # Setup logs
 RUN mkdir -p /var/log/php; \
 	chown -R www-data: /var/log/php; \
-	rm /usr/local/etc/php-fpm.d/*;
+	rm /usr/local/etc/php-fpm.d/*; \
+	mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 
 COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
