@@ -3,7 +3,7 @@ FROM php:5.6-fpm
 LABEL maintainer="Abhijit Rakas <abhijitrakas@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
-LABEL org.label-schema.name="php"
+LABEL org.label-schema.name="php5.6"
 
 RUN set -ex; \
 	apt-get update; \
