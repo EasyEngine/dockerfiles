@@ -1,4 +1,4 @@
-FROM php:7.2-fpm
+FROM php:7.3-fpm
 
 LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
@@ -28,26 +28,16 @@ RUN set -ex; \
 		zip
 
 RUN pecl install imagick memcached; \
-	printf "\n" | pecl install mcrypt-1.0.1; \
+	printf "\n" | pecl install mcrypt-1.0.2; \
 	printf "\n" | pecl install redis; \
 	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include \
 	docker-php-ext-configure zip --with-libzip; \
-	docker-php-ext-configure --with-php-config=/usr/local/bin/php-config; \
 	docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
 	docker-php-ext-install gd imap mysqli opcache soap zip; \
 	docker-php-ext-enable imagick mcrypt redis; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
-
-RUN	mkdir -p /usr/src/php/ext; \
-	cd /usr/src/php/ext/; \
-	curl -sSL -o php7.zip https://github.com/websupport-sk/pecl-memcache/archive/NON_BLOCKING_IO_php7.zip; \
-	unzip php7.zip; \
-	mv pecl-memcache-NON_BLOCKING_IO_php7 memcache; \
-	rm -rf /tmp/pecl-memcache-php7 /usr/src/php/ext/php7.zip; \
-	docker-php-ext-configure memcache --with-php-config=/usr/local/bin/php-config; \
-  docker-php-ext-install memcache;
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
