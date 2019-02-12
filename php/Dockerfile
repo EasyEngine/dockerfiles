@@ -77,17 +77,27 @@ RUN { \
 
 RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 
-# Setup logs
-RUN mkdir -p /var/log/php; \
-	chown -R www-data: /var/log/php; \
-	rm /usr/local/etc/php-fpm.d/*; \
-	mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
-COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
+RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-8.5.0.235-linux.tar.gz | tar -C /tmp -zx && \
+export NR_INSTALL_USE_CP_NOT_LN=1 && \
+export NR_INSTALL_SILENT=1 && \
+/tmp/newrelic-php5-*/newrelic-install install && \
+rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
+ENV NR_PORT=/run/newrelic/newrelic.sock
+
+COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
+COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+
+RUN mkdir -p /var/log/php /var/log/newrelic /run/newrelic; \
+	chown -R www-data:www-data /var/log/php; \
+	chown -R www-data:www-data /var/log/newrelic; \
+	chown -R www-data:www-data /usr/local/etc/php/conf.d; \
+	rm /usr/local/etc/php-fpm.d/*; \
+	mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 WORKDIR /var/www/htdocs
 USER www-data
