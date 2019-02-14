@@ -85,7 +85,6 @@ rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
 ENV NR_PORT=/run/newrelic/newrelic.sock
 
-COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
@@ -98,6 +97,8 @@ RUN mkdir -p /var/log/php /var/log/newrelic /run/newrelic; \
 	chown -R www-data:www-data /usr/local/etc/php/conf.d; \
 	rm /usr/local/etc/php-fpm.d/*; \
 	mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+
+COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 
 WORKDIR /var/www/htdocs
 USER www-data
