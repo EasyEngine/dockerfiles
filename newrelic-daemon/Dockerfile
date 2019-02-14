@@ -1,6 +1,11 @@
 # alpine:latest at 2019-01-30T19:08:47IST
 FROM alpine@sha256:46e71df1e5191ab8b8034c5189e325258ec44ea739bba1e5645cff83c9048ff1
 
+LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
+LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL org.label-schema.vendor="EasyEngine"
+LABEL org.label-schema.name="newrelic-daemon"
+
 ARG NR_VERSION=8.5.0.235
 ENV NR_PORT=/run/newrelic/newrelic.sock
 ENV NR_FILE_NAME=newrelic-php5-$NR_VERSION-linux-musl
