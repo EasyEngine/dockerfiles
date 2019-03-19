@@ -30,7 +30,7 @@ RUN set -ex; \
 RUN pecl install imagick memcached; \
 	printf "\n" | pecl install mcrypt-1.0.1; \
 	printf "\n" | pecl install redis; \
-	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include \
+	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include; \
 	docker-php-ext-configure zip --with-libzip; \
 	docker-php-ext-configure --with-php-config=/usr/local/bin/php-config; \
 	docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
