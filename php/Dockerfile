@@ -95,9 +95,8 @@ RUN mkdir -p /var/log/php /var/log/newrelic /run/newrelic; \
 	chown -R www-data:www-data /var/log/php; \
 	chown -R www-data:www-data /var/log/newrelic; \
 	chown -R www-data:www-data /usr/local/etc/php/conf.d; \
-	rm /usr/local/etc/php-fpm.d/*; \
-	mv /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
-
+	rm /usr/local/etc/php-fpm.d/*;
+COPY php.ini /usr/local/etc/php/php.ini
 COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 
 WORKDIR /var/www/htdocs
