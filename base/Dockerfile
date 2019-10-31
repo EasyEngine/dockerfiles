@@ -1,5 +1,7 @@
 FROM php:cli-stretch
 
+LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>, Riddhesh Sanghvi <riddheshsanghvi96@gmail.com>"
+
 ## Install dependencies
 RUN set -ex; \
 	\
