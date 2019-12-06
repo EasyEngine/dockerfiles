@@ -83,7 +83,7 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/msmtprc
+RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
