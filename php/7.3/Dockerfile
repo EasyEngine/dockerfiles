@@ -10,7 +10,7 @@ RUN set -ex; \
 	apt-get install -y --no-install-recommends \
 		imagemagick \
 		less \
-		mysql-client ssmtp \
+		mariadb-client msmtp \
 		libc-client-dev \
 		libfreetype6-dev \
 		libjpeg-dev \
@@ -65,7 +65,7 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/msmtprc
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -84,4 +84,3 @@ USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
-

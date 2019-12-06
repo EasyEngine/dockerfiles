@@ -21,8 +21,7 @@ RUN set -ex; \
 		libxml2-dev \
 		libpng-dev \
 		libzip-dev \
-		mysql-client \
-		ssmtp \
+		mariadb-client msmtp \
 		unzip \
 		vim \
 		zip
@@ -76,7 +75,7 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
+RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/msmtprc
 
 RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-8.6.0.238-linux.tar.gz | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
