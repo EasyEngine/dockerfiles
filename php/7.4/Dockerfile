@@ -1,6 +1,6 @@
 FROM php:7.4-fpm
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
+LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
