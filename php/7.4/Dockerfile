@@ -96,8 +96,8 @@ ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
-        chown -R www-data: /var/log/php; \
-        rm /usr/local/etc/php-fpm.d/*;
+    chown -R www-data: /var/log/php; \
+    rm /usr/local/etc/php-fpm.d/*;
 COPY php.ini /usr/local/etc/php/php.ini
 COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 
