@@ -85,10 +85,19 @@ RUN { \
 
 RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
 
+RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.4.1.250-linux.tar.gz | tar -C /tmp -zx && \
+export NR_INSTALL_USE_CP_NOT_LN=1 && \
+export NR_INSTALL_SILENT=1 && \
+/tmp/newrelic-php5-*/newrelic-install install && \
+rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+
+ENV NR_PORT=/run/newrelic/newrelic.sock
+
+
 # Setup logs
 RUN mkdir -p /var/log/php; \
-	chown -R www-data: /var/log/php; \
-	rm /usr/local/etc/php-fpm.d/*;
+    chown -R www-data: /var/log/php; \
+    rm /usr/local/etc/php-fpm.d/*;
 COPY php.ini /usr/local/etc/php/php.ini
 COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 
@@ -96,6 +105,7 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
+COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 
 WORKDIR /var/www/htdocs
 USER www-data
