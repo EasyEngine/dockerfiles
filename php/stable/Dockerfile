@@ -1,6 +1,6 @@
-FROM php:7.3-fpm-stretch
+FROM php:7.4-fpm
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
+LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
@@ -22,20 +22,26 @@ RUN set -ex; \
 		libxml2-dev \
 		libpng-dev \
 		libzip-dev \
+        libssl-dev \
 		unzip \
 		vim \
 		zip
 
-RUN pecl install imagick memcached; \
-	printf "\n" | pecl install mcrypt-1.0.2; \
-	printf "\n" | pecl install redis; \
+RUN pecl install imagick; \
+    pecl install memcached; \
+    pecl install mcrypt-1.0.3; \
+	pecl install redis; \
 	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include \
 	docker-php-ext-configure zip --with-libzip; \
-	docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
-	docker-php-ext-install gd imap mysqli opcache soap zip; \
-	docker-php-ext-install exif; \
+    docker-php-ext-install gd; \
+	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
+    docker-php-ext-install imap; \
+    docker-php-ext-install mysqli; \
+    docker-php-ext-install opcache; \
+    docker-php-ext-install soap; \
+    docker-php-ext-install zip; \
+    docker-php-ext-install exif; \
 	docker-php-ext-enable imagick mcrypt redis; \
-	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
@@ -75,10 +81,11 @@ rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
 ENV NR_PORT=/run/newrelic/newrelic.sock
 
+
 # Setup logs
 RUN mkdir -p /var/log/php; \
-	chown -R www-data: /var/log/php; \
-	rm /usr/local/etc/php-fpm.d/*;
+    chown -R www-data: /var/log/php; \
+    rm /usr/local/etc/php-fpm.d/*;
 COPY php.ini /usr/local/etc/php/php.ini
 COPY easyengine.conf /usr/local/etc/php-fpm.d/easyengine.conf
 

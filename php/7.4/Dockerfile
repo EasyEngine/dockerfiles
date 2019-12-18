@@ -1,6 +1,6 @@
 FROM php:7.4-fpm
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
+LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
@@ -27,31 +27,19 @@ RUN set -ex; \
 		vim \
 		zip
 
-RUN echo --------------------------------------------------imagick---------------------------------------------; \
-    pecl install imagick; \
-    echo ---------------------------------------------------memcached-------------------------------------------- ; \
+RUN pecl install imagick; \
     pecl install memcached; \
-    echo ---------------------------------------------------mcrypt---------------------------------------------; \
     pecl install mcrypt-1.0.3; \
-    echo ---------------------------------------------------redis--------------------------------------------; \
 	pecl install redis; \
-    echo -------------------------------------------------config--------------------------------------------; \
 	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include \
 	docker-php-ext-configure zip --with-libzip; \
-    echo ----------------------------------------------------gd----------------------------------------; \
     docker-php-ext-install gd; \
-    echo ----------------------------------------------------------------imap----------------------------------- ; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
     docker-php-ext-install imap; \
-    echo ----------------------------------------------------------------mysql----------------------------------- ; \
     docker-php-ext-install mysqli; \
-    echo ----------------------------------------------------------------opcache--------------------------------- ; \
     docker-php-ext-install opcache; \
-    echo ---------------------------------------------------------------soap------------------------------------- ; \
     docker-php-ext-install soap; \
-    echo --------------------------------------------------------------zip--------------------------------------- ; \
     docker-php-ext-install zip; \
-    echo --------------------------------------------------------------exif--------------------------------------- ; \
     docker-php-ext-install exif; \
 	docker-php-ext-enable imagick mcrypt redis; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
