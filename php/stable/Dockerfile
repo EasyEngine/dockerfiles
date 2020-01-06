@@ -35,6 +35,7 @@ RUN pecl install imagick; \
 	docker-php-ext-configure zip --with-libzip; \
     docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
+	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
     docker-php-ext-install imap; \
     docker-php-ext-install mysqli; \
     docker-php-ext-install opcache; \
