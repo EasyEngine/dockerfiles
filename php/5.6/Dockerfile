@@ -1,9 +1,9 @@
-FROM php:7.2-fpm
+FROM php:5.6-fpm
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
+LABEL maintainer="Abhijit Rakas <abhijitrakas@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
-LABEL org.label-schema.name="php"
+LABEL org.label-schema.name="php5.6"
 
 RUN set -ex; \
 	apt-get update; \
@@ -27,7 +27,7 @@ RUN set -ex; \
 		vim \
 		zip
 
-RUN pecl install imagick memcached; \
+RUN pecl install imagick memcached-2.2.0; \
 	printf "\n" | pecl install mcrypt-1.0.1; \
 	printf "\n" | pecl install redis; \
 	docker-php-ext-configure gd --with-png-dir=/usr --with-jpeg-dir=/usr; \
@@ -40,14 +40,14 @@ RUN pecl install imagick memcached; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
-RUN	mkdir -p /usr/src/php/ext; \
-	cd /usr/src/php/ext/; \
-	curl -sSL -o php7.zip https://github.com/websupport-sk/pecl-memcache/archive/NON_BLOCKING_IO_php7.zip; \
-	unzip php7.zip; \
-	mv pecl-memcache-NON_BLOCKING_IO_php7 memcache; \
-	rm -rf /tmp/pecl-memcache-php7 /usr/src/php/ext/php7.zip; \
-	docker-php-ext-configure memcache --with-php-config=/usr/local/bin/php-config; \
-  docker-php-ext-install memcache;
+# RUN	mkdir -p /usr/src/php/ext; \
+# 	cd /usr/src/php/ext/; \
+# 	curl -sSL -o php7.zip https://github.com/websupport-sk/pecl-memcache/archive/NON_BLOCKING_IO_php7.zip; \
+# 	unzip php7.zip; \
+# 	mv pecl-memcache-NON_BLOCKING_IO_php7 memcache; \
+# 	rm -rf /tmp/pecl-memcache-php7 /usr/src/php/ext/php7.zip; \
+# 	docker-php-ext-configure memcache --with-php-config=/usr/local/bin/php-config; \
+#   docker-php-ext-install memcache;
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
@@ -94,3 +94,4 @@ USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["php-fpm"]
+
