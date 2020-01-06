@@ -43,6 +43,7 @@ RUN pecl install imagick; \
     docker-php-ext-install zip; \
     docker-php-ext-install exif; \
 	docker-php-ext-enable imagick mcrypt redis; \
+	docker-php-ext-install bcmath; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
