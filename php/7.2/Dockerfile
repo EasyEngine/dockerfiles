@@ -36,6 +36,7 @@ RUN pecl install imagick memcached; \
 	docker-php-ext-install gd imap mysqli opcache soap zip; \
 	docker-php-ext-install exif; \
 	docker-php-ext-enable imagick mcrypt redis; \
+	docker-php-ext-install bcmath; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
