@@ -31,8 +31,8 @@ RUN pecl install imagick; \
 	pecl install memcached; \
 	pecl install mcrypt-1.0.3; \
 	pecl install redis; \
-	docker-php-ext-configure gd --enable-gd-native-ttf --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include \
-	docker-php-ext-configure zip --with-libzip; \
+	docker-php-ext-configure gd --with-freetype --with-jpeg; \
+	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
@@ -75,7 +75,7 @@ RUN { \
 
 RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
 
-RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.8.0.259-linux.tar.gz | tar -C /tmp -zx && \
+RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.10.1.263-linux.tar.gz | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \
