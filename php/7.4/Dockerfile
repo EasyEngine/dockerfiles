@@ -18,6 +18,7 @@ RUN set -ex; \
 		libkrb5-dev \
 		libmagickwand-dev \
 		libmcrypt-dev \
+		libicu-dev \
 		libmemcached-dev \
 		libxml2-dev \
 		libpng-dev \
@@ -40,6 +41,7 @@ RUN pecl install imagick; \
     docker-php-ext-install mysqli; \
     docker-php-ext-install opcache; \
     docker-php-ext-install soap; \
+    docker-php-ext-install intl; \
     docker-php-ext-install zip; \
     docker-php-ext-install exif; \
 	docker-php-ext-enable imagick mcrypt redis; \
