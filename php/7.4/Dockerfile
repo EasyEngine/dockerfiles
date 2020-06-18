@@ -22,7 +22,6 @@ RUN set -ex; \
 		libmemcached-dev \
 		libxml2-dev \
 		libpng-dev \
- 		libicu-dev \
 		libzip-dev \
 		libssl-dev \
 		unzip \
@@ -42,7 +41,6 @@ RUN pecl install imagick; \
 	docker-php-ext-install mysqli; \
 	docker-php-ext-install pdo_mysql; \
 	docker-php-ext-install opcache; \
-	docker-php-ext-install intl; \
 	docker-php-ext-install soap; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
