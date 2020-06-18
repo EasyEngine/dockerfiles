@@ -39,6 +39,7 @@ RUN pecl install imagick; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	docker-php-ext-install imap; \
 	docker-php-ext-install mysqli; \
+	docker-php-ext-install pdo_mysql; \
 	docker-php-ext-install opcache; \
 	docker-php-ext-install soap; \
 	docker-php-ext-install intl; \
