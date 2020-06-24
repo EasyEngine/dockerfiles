@@ -12,3 +12,4 @@ RUN apt-get update \
     && apt-get install --no-install-recommends apache2-utils -y && rm -rf /var/lib/apt/lists/*
 
 RUN chmod +x /app/docker-entrypoint.sh
+RUN rm -rf /var/log/nginx/access.log /var/log/nginx/error.log && touch /var/log/nginx/access.log /var/log/nginx/error.log
