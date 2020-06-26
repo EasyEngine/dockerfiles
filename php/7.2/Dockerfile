@@ -50,6 +50,15 @@ RUN pecl install imagick; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
+RUN	mkdir -p /usr/src/php/ext; \
+	cd /usr/src/php/ext/; \
+	curl -sSL -o php7.zip https://github.com/websupport-sk/pecl-memcache/archive/NON_BLOCKING_IO_php7.zip; \
+	unzip php7.zip; \
+	mv pecl-memcache-NON_BLOCKING_IO_php7 memcache; \
+	rm -rf /tmp/pecl-memcache-php7 /usr/src/php/ext/php7.zip; \
+	docker-php-ext-configure memcache --with-php-config=/usr/local/bin/php-config; \
+	docker-php-ext-install memcache;
+
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
 RUN { \
