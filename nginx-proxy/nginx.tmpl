@@ -171,6 +171,14 @@ proxy_set_header X-Original-URI $request_uri;
 
 # Mitigate httpoxy attack (see README for details)
 proxy_set_header Proxy "";
+
+server {
+	location /elb-status {
+		access_log off;
+		return 200;
+	}
+}
+
 {{ end }}
 
 {{ $enable_ipv6 := eq (or ($.Env.ENABLE_IPV6) "") "true" }}
