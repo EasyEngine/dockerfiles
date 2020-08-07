@@ -1,4 +1,4 @@
-FROM redis:6.0.5
+FROM redis:6.0.6
 
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
