@@ -45,7 +45,7 @@
 		include /etc/nginx/vhost.d/default_acl;
 		{{ end }}
 		{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ .Host }}  Mailhog";
+		auth_basic      "Restricted {{ .Host }} Mailhog";
 		auth_basic_user_file    /etc/nginx/htpasswd/default;
 		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
@@ -171,6 +171,14 @@ proxy_set_header X-Original-URI $request_uri;
 
 # Mitigate httpoxy attack (see README for details)
 proxy_set_header Proxy "";
+
+server {
+	location /elb-status {
+		access_log off;
+		return 200;
+	}
+}
+
 {{ end }}
 
 {{ $enable_ipv6 := eq (or ($.Env.ENABLE_IPV6) "") "true" }}
@@ -351,7 +359,7 @@ server {
 			{{ $sum := sha1 "/" }}
 		proxy_pass http://{{ printf "%s-%s" $host $sum }};
 			{{ if (exists (printf "/etc/nginx/htpasswd/default_admin_tools")) }}
-		auth_basic      "Restricted {{ $host }}  Admin Tools";
+		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/default_admin_tools") }};
 		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
@@ -359,7 +367,7 @@ server {
 		include /etc/nginx/vhost.d/default_acl;
 		{{ end }}
 			{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ $host }}  Admin Tools";
+		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    "/etc/nginx/htpasswd/default";
 		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
@@ -407,7 +415,7 @@ server {
 			{{ $sum := sha1 "/" }}
 		proxy_pass http://{{ printf "%s-%s" $host $sum }};
 			{{ if (exists (printf "/etc/nginx/htpasswd/default_admin_tools")) }}
-		auth_basic      "Restricted {{ $host }}  Admin Tools";
+		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/default_admin_tools") }};
 		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
@@ -415,7 +423,7 @@ server {
 		include /etc/nginx/vhost.d/default_acl;
 		{{ end }}
 			{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ $host }}  Admin Tools";
+		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    "/etc/nginx/htpasswd/default";
 		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
