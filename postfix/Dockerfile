@@ -21,6 +21,7 @@ RUN apt-get update \
             libdb5.3 libpq5 libmariadbclient18 libsqlite3-0 \
             libsasl2-2 \
             libldap-2.4 \
+            libsasl2-modules \
     \
  # Install tools for building
  && toolDeps=" \
