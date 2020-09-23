@@ -1,5 +1,4 @@
-# FROM php:7.3-fpm-stretch
-FROM php:7.3-fpm
+FROM php:7.3-fpm@sha256:1c1227151694060d4717afbe6a817642feb877a3b7c7b48d69aff938c3068962
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
