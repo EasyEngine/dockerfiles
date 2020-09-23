@@ -1,4 +1,4 @@
-FROM php:7.0-fpm
+FROM php:7.0-fpm@sha256:8e8644c0fd61424939fff072ca617469550bbb659158301a2dcadf334746a1c2
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
@@ -78,7 +78,7 @@ RUN { \
 
 RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
 
-RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.11.0.267-linux.tar.gz | tar -C /tmp -zx && \
+RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.13.0.270-linux.tar.gz | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \
