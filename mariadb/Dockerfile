@@ -4,3 +4,4 @@ LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="db"
 
 COPY ee.cnf  /etc/mysql/conf.d/ee.cnf
+COPY my.cnf  /etc/mysql/
