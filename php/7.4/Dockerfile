@@ -76,7 +76,11 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
+RUN mkdir /usr/local/etc/misc && \
+touch /usr/local/etc/misc/msmtprc && \
+ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
+chown www-data:www-data /usr/local/etc/misc/msmtprc && \
+chown www-data:www-data /etc/msmtprc
 
 RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
 curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \

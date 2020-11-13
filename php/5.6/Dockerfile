@@ -77,6 +77,12 @@ RUN { \
 
 RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 
+RUN mkdir /usr/local/etc/misc && \
+touch /usr/local/etc/misc/revaliases && \
+ln -s /usr/local/etc/misc/msmtprc /etc/ssmtp/revaliases && \
+chown www-data:www-data /usr/local/etc/misc/msmtprc && \
+chown www-data:www-data /etc/ssmtp/revaliases
+
 # Setup logs
 RUN mkdir -p /var/log/php; \
 	chown -R www-data: /var/log/php; \
