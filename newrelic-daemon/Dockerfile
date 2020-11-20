@@ -6,7 +6,7 @@ LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="newrelic-daemon"
 
-ARG NR_VERSION=8.5.0.235
+ARG NR_VERSION=9.14.0.290
 ENV NR_PORT=/run/newrelic/newrelic.sock
 ENV NR_FILE_NAME=newrelic-php5-$NR_VERSION-linux-musl
 ENV NR_FILE_URL=https://download.newrelic.com/php_agent/archive/$NR_VERSION/$NR_FILE_NAME.tar.gz
