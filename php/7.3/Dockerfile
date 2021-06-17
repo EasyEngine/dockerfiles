@@ -1,7 +1,7 @@
-FROM php:7.3-fpm@sha256:bddaadd1e7cc3537b3b4ab5780e099215f1503fe99d5f75f41d532950438c75a
+FROM php:7.3-fpm@sha256:d38892103d2f76e3245a080875718d74414d6d7a57cfe7000a91f4aa668f870b
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
-LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
 
