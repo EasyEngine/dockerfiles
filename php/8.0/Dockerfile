@@ -1,7 +1,7 @@
-FROM php:7.4-fpm@sha256:7996e36b510f048a0aa1a296415bef7b6ad8ddb8fe870f244a006ccf5a7454eb
+FROM php:8.0-fpm@sha256:1486c77a818ec93fcf2b76a39768b5b5d97b3b4fc50869b9a3d0de63f4737096
 
-LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
-LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
+LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
 
@@ -17,6 +17,7 @@ RUN set -ex; \
 		libjpeg62-turbo-dev \
 		libkrb5-dev \
 		libmagickwand-dev \
+		libgraphicsmagick1-dev \
 		libmcrypt-dev \
 		libicu-dev \
 		libmemcached-dev \
@@ -24,6 +25,7 @@ RUN set -ex; \
 		libpng-dev \
 		libzip-dev \
 		libssl-dev \
+		libgmp-dev \
 		unzip \
 		vim \
 		zip
@@ -32,11 +34,14 @@ RUN pecl install imagick; \
 	pecl install memcached; \
 	pecl install mcrypt-1.0.3; \
 	pecl install redis; \
+	pecl install apcu; \
+	pecl install mcrypt; \
+	pecl install gmagick-2.0.6RC1; \
+	pecl install timezonedb; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
-	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	docker-php-ext-install imap; \
 	docker-php-ext-install mysqli; \
 	docker-php-ext-install pdo_mysql; \
@@ -45,9 +50,32 @@ RUN pecl install imagick; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
 	docker-php-ext-install exif; \
-	docker-php-ext-enable imagick mcrypt redis; \
+	docker-php-ext-install calendar; \
+	docker-php-ext-install gmp; \
+	docker-php-ext-install pcntl; \
+	docker-php-ext-install shmop; \
+	docker-php-ext-install sockets; \
+	docker-php-ext-install sysvsem; \
+	docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
+	docker-php-ext-enable imagick mcrypt redis timezonedb; \
+	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
+	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
+	echo "extension=mcrypt.so" >> /usr/local/etc/php/conf.d/mcrypt.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+	rm -rf /var/lib/apt/lists/*;
+
+# https://github.com/Imagick/imagick/issues/358
+# Work around for imagick till the above issue is fixed
+RUN apt update && apt install -y git && \
+	git clone https://github.com/Imagick/imagick && \
+	cd imagick && \
+	phpize && ./configure && \
+	make && \
+	make install && \
+	cd ../ && \
+	rm -rf imagick && \
+	docker-php-ext-enable imagick && \
 	rm -rf /var/lib/apt/lists/*;
 
 # set recommended PHP.ini settings
