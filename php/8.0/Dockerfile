@@ -58,10 +58,9 @@ RUN pecl install imagick; \
 	docker-php-ext-install sysvsem; \
 	docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
-	docker-php-ext-enable imagick mcrypt redis timezonedb; \
+	docker-php-ext-enable imagick mcrypt redis timezonedb apcu; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
-	echo "extension=mcrypt.so" >> /usr/local/etc/php/conf.d/mcrypt.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
