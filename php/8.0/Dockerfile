@@ -32,7 +32,6 @@ RUN set -ex; \
 
 RUN pecl install imagick; \
 	pecl install memcached; \
-	pecl install mcrypt-1.0.3; \
 	pecl install redis; \
 	pecl install apcu; \
 	pecl install mcrypt; \
