@@ -1,6 +1,6 @@
-FROM php:7.4-fpm@sha256:d76eff357d12d90a951325da26a451800349101bd4d067fe7cdd0bd31a870590
+FROM php:8.1-fpm@sha256:243674ea47fc0d87c60a3af61724270010ac401532650555d7b77106dfe55abb
 
-LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
@@ -32,11 +32,12 @@ RUN set -ex; \
 
 RUN pecl install imagick; \
 	pecl install memcached; \
-	pecl install mcrypt; \
 	pecl install redis; \
-    pecl install apcu; \
-    pecl install gmagick-2.0.6RC1; \
-    pecl install timezonedb; \
+	pecl install apcu; \
+	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
+	pecl install -n mcrypt; \
+	pecl install gmagick-2.0.6RC1; \
+	pecl install timezonedb; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
@@ -49,18 +50,31 @@ RUN pecl install imagick; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
 	docker-php-ext-install exif; \
-    docker-php-ext-install calendar; \
-    docker-php-ext-install gmp; \
-    docker-php-ext-install pcntl; \
-    docker-php-ext-install shmop; \
-    docker-php-ext-install sockets; \
-    docker-php-ext-install sysvsem; \
-    docker-php-ext-install sysvshm; \
+	docker-php-ext-install calendar; \
+	docker-php-ext-install gmp; \
+	docker-php-ext-install pcntl; \
+	docker-php-ext-install shmop; \
+	docker-php-ext-install sockets; \
+	docker-php-ext-install sysvsem; \
+	docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
 	docker-php-ext-enable imagick mcrypt redis timezonedb apcu; \
-    echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
+	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+	rm -rf /var/lib/apt/lists/*;
+
+# https://github.com/Imagick/imagick/issues/358
+# Work around for imagick till the above issue is fixed
+RUN apt update && apt install -y git && \
+	git clone https://github.com/Imagick/imagick && \
+	cd imagick && \
+	phpize && ./configure && \
+	make && \
+	make install && \
+	cd ../ && \
+	rm -rf imagick && \
+	docker-php-ext-enable imagick && \
 	rm -rf /var/lib/apt/lists/*;
 
 # set recommended PHP.ini settings
@@ -99,7 +113,6 @@ export NR_INSTALL_SILENT=1 && \
 rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
 ENV NR_PORT=/run/newrelic/newrelic.sock
-
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
