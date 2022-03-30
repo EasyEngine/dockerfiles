@@ -34,7 +34,8 @@ RUN pecl install imagick; \
 	pecl install memcached; \
 	pecl install redis; \
 	pecl install apcu; \
-	pecl install mcrypt; \
+	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
+	pecl install -n mcrypt; \
 	pecl install gmagick-2.0.6RC1; \
 	pecl install timezonedb; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg; \
@@ -112,9 +113,6 @@ export NR_INSTALL_SILENT=1 && \
 rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
 ENV NR_PORT=/run/newrelic/newrelic.sock
-
-
-RUN ls -alh /usr/local/etc/php/
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
