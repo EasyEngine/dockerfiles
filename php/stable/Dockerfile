@@ -1,4 +1,4 @@
-FROM php:7.4-fpm@sha256:610af6fce15abd550be76b9231ea32dae2ca9b481a3a439bf75cc5532ab63364
+FROM php:7.4-fpm@sha256:d76eff357d12d90a951325da26a451800349101bd4d067fe7cdd0bd31a870590
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
