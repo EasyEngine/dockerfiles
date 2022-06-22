@@ -1,6 +1,6 @@
 FROM php:5.6-fpm
 
-LABEL maintainer="Abhijit Rakas <abhijitrakas@gmail.com>"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php5.6"
@@ -77,8 +77,9 @@ RUN { \
 
 RUN echo "mailhub=postfix\nUseTLS=NO\nFromLineOverride=YES" > /etc/ssmtp/ssmtp.conf
 
-RUN mkdir /usr/local/etc/misc && \
-touch /usr/local/etc/misc/revaliases && \
+RUN mkdir -p /usr/local/etc/misc && \
+touch /usr/local/etc/misc/msmtprc && \
+rm -f /etc/ssmtp/revaliases && \
 ln -s /usr/local/etc/misc/msmtprc /etc/ssmtp/revaliases && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/ssmtp/revaliases
