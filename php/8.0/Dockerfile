@@ -1,4 +1,4 @@
-FROM php:8.0-fpm@sha256:1486c77a818ec93fcf2b76a39768b5b5d97b3b4fc50869b9a3d0de63f4737096
+FROM php:8.0-fpm@sha256:ae3cc36f3c9b42205a2bed6a2f5d2eb76ddcb4d893222f17861ec24d3f4b18a3
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -32,7 +32,6 @@ RUN set -ex; \
 
 RUN pecl install imagick; \
 	pecl install memcached; \
-	pecl install mcrypt-1.0.3; \
 	pecl install redis; \
 	pecl install apcu; \
 	pecl install mcrypt; \
