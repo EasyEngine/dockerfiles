@@ -37,7 +37,7 @@ jobs:
         id: img-tag
         run: |
           PHP=${{ matrix.php }}
-          echo ::set-output name=tag::${PHP/php\/stable/}
+          echo ::set-output name=tag::${PHP/stable/}
 
       - name: Login to DockerHub
         uses: docker/login-action@v1
