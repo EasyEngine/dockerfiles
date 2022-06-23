@@ -1,4 +1,4 @@
-FROM debian:stretch-slim
+FROM debian:buster-slim@sha256:fda76aa2ef4867e583dc8a7b86bbdb51118b8794c1b98aa4aeebaca3a1ad9c0f
 
 LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
@@ -11,14 +11,16 @@ LABEL org.label-schema.name="postfix"
 RUN apt-get update \
  && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends --no-install-suggests \
+            openssl \
+            m4 \
             inetutils-syslogd \
             ca-certificates \
  && update-ca-certificates \
     \
  # Install Postfix dependencies
  && apt-get install -y --no-install-recommends --no-install-suggests \
-            libpcre3 libicu57 \
-            libdb5.3 libpq5 libmariadbclient18 libsqlite3-0 \
+            libpcre3 libicu63 \
+            libdb5.3 libpq5 libmariadb3 libmariadb-dev-compat libsqlite3-0 \
             libsasl2-2 \
             libldap-2.4 \
             libsasl2-modules \
@@ -43,9 +45,7 @@ RUN apt-get update \
 
  # Download and prepare Postfix sources
 RUN curl -fL -o /tmp/postfix.tar.gz \
-         http://cdn.postfix.johnriley.me/mirrors/postfix-release/official/postfix-3.3.1.tar.gz \
- && (echo "2307f50f8b7dab1db46ebe4ae30bc5682a25b9c49ae5ae65aa95b4620bb5450dd5929977c0f34b9e73a92ca6af36fd8e24167732420a1a2d89167c7a3b197276  /tmp/postfix.tar.gz" \
-         | sha512sum -c -) \
+         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.7.2.tar.gz \
  && tar -xzf /tmp/postfix.tar.gz -C /tmp/
 
  # Build Postfix from sources
