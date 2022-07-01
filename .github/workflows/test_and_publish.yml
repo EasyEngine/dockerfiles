@@ -53,7 +53,6 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           context: php/${{ matrix.php }}
-          push: true
           tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
 
       - name: Build and push PHP - ${{ matrix.php }} image
@@ -98,7 +97,6 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           context: ${{ matrix.others }}
-          push: true
           tags: easyengine/${{ matrix.others }}:test
 
       - name: Build and push ${{ matrix.others }} image
