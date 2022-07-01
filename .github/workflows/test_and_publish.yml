@@ -54,8 +54,7 @@ jobs:
         with:
           context: php/${{ matrix.php }}
           push: true
-          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:${{ steps.tag.outputs.tag }}
-
+          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
 
       - name: Build and push PHP - ${{ matrix.php }} image
         uses: docker/build-push-action@v2
@@ -94,13 +93,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.others }} image
+      - name: Build ${{ matrix.others }} image
         uses: docker/build-push-action@v2
         if: github.event_name == 'pull_request'
         with:
           context: ${{ matrix.others }}
           push: true
-          tags: easyengine/${{ matrix.others }}:${{ steps.tag.outputs.tag }}
+          tags: easyengine/${{ matrix.others }}:test
 
       - name: Build and push ${{ matrix.others }} image
         uses: docker/build-push-action@v2
