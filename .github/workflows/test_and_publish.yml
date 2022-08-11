@@ -1,0 +1,108 @@
+# #
+# # This action will publish EasyEngine docker image.
+# # This is set to publish images when tags are created,
+# # and test them by just building them on PR.
+# #
+
+name: Test & Publish EE docker images
+on:
+  pull_request:
+  push:
+    tags:
+      - v*
+
+jobs:
+
+  php: #----------------------------------------------------------------------
+
+    runs-on: ubuntu-latest
+    name: Build and push PHP ${{ matrix.php }}
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['5.6', '7.0', '7.2', '7.4', '8.0', '8.1', 'stable']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Get tag
+        id: tag
+        run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
+
+      - name: Img tag
+        id: img-tag
+        run: |
+          PHP=${{ matrix.php }}
+          echo ::set-output name=tag::${PHP/stable/}
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        if: github.event_name != 'pull_request'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build PHP - ${{ matrix.php }} image
+        uses: docker/build-push-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          context: php/${{ matrix.php }}
+          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
+
+      - name: Build and push PHP - ${{ matrix.php }} image
+        uses: docker/build-push-action@v2
+        if: github.event_name != 'pull_request'
+        with:
+          context: php/${{ matrix.php }}
+          push: true
+          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:${{ steps.tag.outputs.tag }}
+
+  other-images: #----------------------------------------------------------------------
+
+    runs-on: ubuntu-latest
+    name: Build and push ${{ matrix.others }}
+    strategy:
+      fail-fast: false
+      matrix:
+        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Get tag
+        id: tag
+        run: echo ::set-output name=tag::${GITHUB_REF/refs\/tags\//}
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v1
+        if: github.event_name != 'pull_request'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build ${{ matrix.others }} image
+        uses: docker/build-push-action@v2
+        if: github.event_name == 'pull_request'
+        with:
+          context: ${{ matrix.others }}
+          tags: easyengine/${{ matrix.others }}:test
+
+      - name: Build and push ${{ matrix.others }} image
+        uses: docker/build-push-action@v2
+        if: github.event_name != 'pull_request'
+        with:
+          context: ${{ matrix.others }}
+          push: true
+          tags: easyengine/${{ matrix.others }}:${{ steps.tag.outputs.tag }}

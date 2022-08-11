@@ -1,7 +1,7 @@
-FROM php:7.4-fpm@sha256:0724c5e3f6c9ab59ae4536405be40f559b0714ee67099377ed566e650d46e58d
+FROM php:7.4-fpm@sha256:d5c16ec704c806281ae041fec38a3886a005c886a1819775cbbf4d31c5042e7f
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
-LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
 
@@ -17,6 +17,7 @@ RUN set -ex; \
 		libjpeg62-turbo-dev \
 		libkrb5-dev \
 		libmagickwand-dev \
+		libgraphicsmagick1-dev \
 		libmcrypt-dev \
 		libicu-dev \
 		libmemcached-dev \
@@ -24,19 +25,22 @@ RUN set -ex; \
 		libpng-dev \
 		libzip-dev \
 		libssl-dev \
+		libgmp-dev \
 		unzip \
 		vim \
 		zip
 
 RUN pecl install imagick; \
 	pecl install memcached; \
-	pecl install mcrypt-1.0.3; \
+	pecl install mcrypt; \
 	pecl install redis; \
+    pecl install apcu; \
+    pecl install gmagick-2.0.6RC1; \
+    pecl install timezonedb; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
-	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	docker-php-ext-install imap; \
 	docker-php-ext-install mysqli; \
 	docker-php-ext-install pdo_mysql; \
@@ -45,8 +49,17 @@ RUN pecl install imagick; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
 	docker-php-ext-install exif; \
-	docker-php-ext-enable imagick mcrypt redis; \
+    docker-php-ext-install calendar; \
+    docker-php-ext-install gmp; \
+    docker-php-ext-install pcntl; \
+    docker-php-ext-install shmop; \
+    docker-php-ext-install sockets; \
+    docker-php-ext-install sysvsem; \
+    docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
+	docker-php-ext-enable imagick mcrypt redis timezonedb apcu; \
+    echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
+	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
@@ -76,9 +89,14 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
+RUN mkdir /usr/local/etc/misc && \
+touch /usr/local/etc/misc/msmtprc && \
+ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
+chown www-data:www-data /usr/local/etc/misc/msmtprc && \
+chown www-data:www-data /etc/msmtprc
 
-RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.13.0.270-linux.tar.gz | tar -C /tmp -zx && \
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \

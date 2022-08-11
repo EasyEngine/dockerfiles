@@ -1,4 +1,4 @@
-FROM php:7.2-fpm@sha256:f4f1a5748521df720d552bf1431c5b9308e3ad6557805a2572eefea9e3bce1fb
+FROM php:7.2-fpm@sha256:a8d1ebf6390aa47574fd8aec875d907a4fa1169de8c88bd256890921e6454436
 
 LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0-rc1"
@@ -85,9 +85,14 @@ RUN { \
 		echo 'path: /var/www/htdocs'; \
 		} > /etc/wp-cli/config.yml
 
-RUN echo "host postfix\ntls off\nfrom ee4@easyengine.io" > /etc/msmtprc
+RUN mkdir /usr/local/etc/misc && \
+touch /usr/local/etc/misc/msmtprc && \
+ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
+chown www-data:www-data /usr/local/etc/misc/msmtprc && \
+chown www-data:www-data /etc/msmtprc
 
-RUN curl -L https://download.newrelic.com/php_agent/release/newrelic-php5-9.13.0.270-linux.tar.gz | tar -C /tmp -zx && \
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \
