@@ -45,7 +45,7 @@ RUN apt-get update \
 
  # Download and prepare Postfix sources
 RUN curl -fL -o /tmp/postfix.tar.gz \
-         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.7.2.tar.gz \
+         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.7.3.tar.gz \
  && tar -xzf /tmp/postfix.tar.gz -C /tmp/
 
  # Build Postfix from sources
