@@ -1,12 +1,12 @@
-# alpine:latest at 2019-01-30T19:08:47IST
-FROM alpine@sha256:46e71df1e5191ab8b8034c5189e325258ec44ea739bba1e5645cff83c9048ff1
+# alpine:latest at 2022-12-08T10:45:13IST
+FROM alpine@sha256:8914eb54f968791faf6a8638949e480fef81e697984fba772b3976835194c6d4
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>"
-LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="newrelic-daemon"
 
-ARG NR_VERSION=8.5.0.235
+ARG NR_VERSION=10.3.0.315
 ENV NR_PORT=/run/newrelic/newrelic.sock
 ENV NR_FILE_NAME=newrelic-php5-$NR_VERSION-linux-musl
 ENV NR_FILE_URL=https://download.newrelic.com/php_agent/archive/$NR_VERSION/$NR_FILE_NAME.tar.gz
