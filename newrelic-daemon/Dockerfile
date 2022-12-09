@@ -1,7 +1,7 @@
 # alpine:latest at 2022-12-08T10:45:13IST
 FROM alpine@sha256:8914eb54f968791faf6a8638949e480fef81e697984fba772b3976835194c6d4
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="newrelic-daemon"

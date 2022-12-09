@@ -1,6 +1,6 @@
 FROM debian:buster-slim@sha256:91b2ec3340d52126267e0ff5dbb3cfd4c97c3a20b161a6f5ce7ca9560ec1794f
 
-LABEL maintainer="Mriyam Tamuli <mbtamuli@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="postfix"
