@@ -64,19 +64,6 @@ RUN pecl install imagick; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
-# https://github.com/Imagick/imagick/issues/358
-# Work around for imagick till the above issue is fixed
-RUN apt update && apt install -y git && \
-	git clone https://github.com/Imagick/imagick && \
-	cd imagick && \
-	phpize && ./configure && \
-	make && \
-	make install && \
-	cd ../ && \
-	rm -rf imagick && \
-	docker-php-ext-enable imagick && \
-	rm -rf /var/lib/apt/lists/*;
-
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
 RUN { \
