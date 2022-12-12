@@ -1,4 +1,4 @@
-FROM redis:6.2.6@sha256:54ee15a0b0d2c661d46b9bfbf55b181f9a4e7ddf8bf693eec5703dac2c0f5546
+FROM redis:7.0.5@sha256:dfeb5451fce377ab47c5bb6b6826592eea534279354bbfc3890c0b5e9b57c763
 
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"

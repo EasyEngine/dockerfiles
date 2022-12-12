@@ -1,4 +1,4 @@
-FROM openresty/openresty:1.21.4.1-3-buster@sha256:77da817d32ac51573d209214d55a1711e0012f2f41785ac0bdb7b25b756281e0
+FROM openresty/openresty:1.21.4.1-4-buster@sha256:9be444a283344aec2d499682c7ab9d342d06245632c8e71a0c1c37d19d11b436
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="nginx"
