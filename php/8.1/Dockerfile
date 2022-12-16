@@ -1,4 +1,4 @@
-FROM php:8.1-fpm@sha256:f711cee8f18c1c16715dd343215e4563c3d979cb5647c98c69cfd27c939c76bf
+FROM php:8.1-fpm@sha256:0b5719c9257dc4caf2ccdb579eb268abe798bc2d708b69150ee41f3be18ee8a2
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -62,19 +62,6 @@ RUN pecl install imagick; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
-	rm -rf /var/lib/apt/lists/*;
-
-# https://github.com/Imagick/imagick/issues/358
-# Work around for imagick till the above issue is fixed
-RUN apt update && apt install -y git && \
-	git clone https://github.com/Imagick/imagick && \
-	cd imagick && \
-	phpize && ./configure && \
-	make && \
-	make install && \
-	cd ../ && \
-	rm -rf imagick && \
-	docker-php-ext-enable imagick && \
 	rm -rf /var/lib/apt/lists/*;
 
 # set recommended PHP.ini settings
