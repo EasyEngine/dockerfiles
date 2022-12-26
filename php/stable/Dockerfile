@@ -37,7 +37,7 @@ RUN pecl install imagick; \
     pecl install apcu; \
     pecl install gmagick-2.0.6RC1; \
     pecl install timezonedb; \
-	docker-php-ext-configure gd --with-freetype --with-jpeg; \
+	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
