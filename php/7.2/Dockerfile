@@ -91,8 +91,11 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+
+# Pinning to `10.2.0.314` till https://github.com/newrelic/newrelic-php-agent/issues/577 is fixed.
+RUN curl -L "https://download.newrelic.com/php_agent/archive/10.2.0.314/newrelic-php5-10.2.0.314-linux.tar.gz" | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \

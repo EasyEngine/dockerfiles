@@ -1,4 +1,4 @@
-FROM php:8.0-fpm@sha256:d440fdd10b406a1379f2cdc95288190979927fe25347ee75ad2560ff1e5710c4
+FROM php:8.0-fpm@sha256:5e3f0563da938932b36403e14c927e9bd4e16da3d541b3d61bb06aec61d74a6b
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -95,8 +95,11 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+
+# Pinning to `10.2.0.314` till https://github.com/newrelic/newrelic-php-agent/issues/577 is fixed.
+RUN curl -L "https://download.newrelic.com/php_agent/archive/10.2.0.314/newrelic-php5-10.2.0.314-linux.tar.gz" | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
 /tmp/newrelic-php5-*/newrelic-install install && \
