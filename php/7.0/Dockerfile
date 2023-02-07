@@ -24,6 +24,7 @@ RUN set -ex; \
 		libzip-dev \
 		libssl-dev \
 		libicu-dev \
+		libwebp-dev \
 		unzip \
 		vim \
 		zip
