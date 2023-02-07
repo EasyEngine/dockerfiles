@@ -1,4 +1,4 @@
-FROM php:8.0-fpm@sha256:3ba0dec3b6c73f9948c0d3215da03e9341526356789ad75debe4848c485cf3cd
+FROM php:8.2-fpm@sha256:5abd956fc3932c24def1ae0ba1f31aaacc5945946b68fe575cbb193669af6205
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -34,10 +34,11 @@ RUN pecl install imagick; \
 	pecl install memcached; \
 	pecl install redis; \
 	pecl install apcu; \
-	pecl install mcrypt; \
+	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
+	pecl install -n mcrypt; \
 	pecl install gmagick-2.0.6RC1; \
 	pecl install timezonedb; \
-	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+	docker-php-ext-configure gd --with-freetype --with-jpeg; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
@@ -95,15 +96,15 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-export NR_INSTALL_USE_CP_NOT_LN=1 && \
-export NR_INSTALL_SILENT=1 && \
-/tmp/newrelic-php5-*/newrelic-install install && \
-rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+## Newrelic agent does not support PHP 8.2 as of 6th Feb 2023. So, we are commenting it out for now.
+# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+# export NR_INSTALL_USE_CP_NOT_LN=1 && \
+# export NR_INSTALL_SILENT=1 && \
+# /tmp/newrelic-php5-*/newrelic-install install && \
+# rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
-ENV NR_PORT=/run/newrelic/newrelic.sock
-
+# ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -116,7 +117,7 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+# COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 
 WORKDIR /var/www/htdocs
 USER www-data
