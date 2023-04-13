@@ -1,4 +1,4 @@
-FROM mariadb:10.8.2@sha256:490f01279be1452f12f497a592112cb960cf0500938dbf0ea3f0135cb6728d3d
+FROM mariadb:10.11@sha256:9ff479f244cc596aed9794d035a9f352662f2caed933238c533024df64569853
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="db"
