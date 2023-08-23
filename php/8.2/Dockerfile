@@ -1,6 +1,6 @@
-FROM php:7.3-fpm@sha256:a810876c96407cbbddef949379d2057f4f85d5c1d892dcf2c8d9503239549990
+FROM php:8.2-fpm@sha256:a6040895989bdc8e214c35d5ce01e59a18648a7be38971972d6731ac9587382c
 
-LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
@@ -19,26 +19,26 @@ RUN set -ex; \
 		libmagickwand-dev \
 		libgraphicsmagick1-dev \
 		libmcrypt-dev \
+		libicu-dev \
 		libmemcached-dev \
 		libxml2-dev \
 		libpng-dev \
 		libzip-dev \
 		libssl-dev \
 		libgmp-dev \
-		libicu-dev \
-		libwebp-dev \
 		unzip \
 		vim \
 		zip
 
 RUN pecl install imagick; \
 	pecl install memcached; \
-	pecl install mcrypt; \
 	pecl install redis; \
-    pecl install apcu; \
-    pecl install gmagick-2.0.6RC1; \
-    pecl install timezonedb; \
-	docker-php-ext-configure gd --with-freetype-dir=/usr/include/freetype2 --with-png-dir=/usr/include --with-jpeg-dir=/usr/include --with-webp; \
+	pecl install apcu; \
+	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
+	pecl install -n mcrypt; \
+	pecl install gmagick-2.0.6RC1; \
+	pecl install timezonedb; \
+	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
@@ -50,13 +50,13 @@ RUN pecl install imagick; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
 	docker-php-ext-install exif; \
-    docker-php-ext-install calendar; \
-    docker-php-ext-install gmp; \
-    docker-php-ext-install pcntl; \
-    docker-php-ext-install shmop; \
-    docker-php-ext-install sockets; \
-    docker-php-ext-install sysvsem; \
-    docker-php-ext-install sysvshm; \
+	docker-php-ext-install calendar; \
+	docker-php-ext-install gmp; \
+	docker-php-ext-install pcntl; \
+	docker-php-ext-install shmop; \
+	docker-php-ext-install sockets; \
+	docker-php-ext-install sysvsem; \
+	docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
 	docker-php-ext-enable imagick mcrypt redis timezonedb apcu; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
@@ -96,15 +96,15 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-export NR_INSTALL_USE_CP_NOT_LN=1 && \
-export NR_INSTALL_SILENT=1 && \
-/tmp/newrelic-php5-*/newrelic-install install && \
-rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+## Newrelic agent does not support PHP 8.2 as of 6th Feb 2023. So, we are commenting it out for now.
+# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+# export NR_INSTALL_USE_CP_NOT_LN=1 && \
+# export NR_INSTALL_SILENT=1 && \
+# /tmp/newrelic-php5-*/newrelic-install install && \
+# rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
-ENV NR_PORT=/run/newrelic/newrelic.sock
-
+# ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -117,7 +117,7 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+# COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 
 WORKDIR /var/www/htdocs
 USER www-data

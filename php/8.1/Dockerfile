@@ -1,4 +1,4 @@
-FROM php:8.1-fpm@sha256:bdac671e3ca663c0e9dc7008f28b3ee8dc2cc5b2d11fcde83d2142ab0369f457
+FROM php:8.1-fpm@sha256:bde482789a6d1fea323e3d29c5f2e01c19f0d84c7eb897661e991ce8b8757b9e
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -38,7 +38,7 @@ RUN pecl install imagick; \
 	pecl install -n mcrypt; \
 	pecl install gmagick-2.0.6RC1; \
 	pecl install timezonedb; \
-	docker-php-ext-configure gd --with-freetype --with-jpeg; \
+	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	PHP_OPENSSL=yes docker-php-ext-configure imap --with-kerberos --with-imap-ssl; \
