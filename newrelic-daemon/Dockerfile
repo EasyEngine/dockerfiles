@@ -1,21 +1,19 @@
-# alpine:latest at 2022-12-08T10:45:13IST
-FROM alpine@sha256:8914eb54f968791faf6a8638949e480fef81e697984fba772b3976835194c6d4
+# alpine:latest at 2023-11-10T14:09:58IST
+FROM alpine@sha256:eece025e432126ce23f223450a0326fbebde39cdf496a85d8c016293fc851978
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="newrelic-daemon"
 
-ARG NR_VERSION=10.3.0.315
 ENV NR_PORT=/run/newrelic/newrelic.sock
-ENV NR_FILE_NAME=newrelic-php5-$NR_VERSION-linux-musl
-ENV NR_FILE_URL=https://download.newrelic.com/php_agent/archive/$NR_VERSION/$NR_FILE_NAME.tar.gz
 
-RUN set -ex; \
+RUN  set -ex; \
     apk --no-cache add curl; \
+    export NR_FILE_URL="https://download.newrelic.com$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux-musl.tar.gz' | sed 's/.*"\(.*\)".*/\1/')"; \
     curl --connect-timeout 10 -o nr.tar.gz -fSL $NR_FILE_URL; \
     tar -xf nr.tar.gz; \
-    cp $NR_FILE_NAME/daemon/newrelic-daemon.x64 /usr/local/bin/newrelic-daemon; \
+    cp newrelic-php5-*/daemon/newrelic-daemon.x64 /usr/local/bin/newrelic-daemon; \
     mkdir -p /var/log/newrelic /run/newrelic; \
     rm -rf newrelic-php5* nr.tar.gz;
 
