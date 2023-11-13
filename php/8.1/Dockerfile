@@ -1,4 +1,4 @@
-FROM php:8.1-fpm@sha256:bde482789a6d1fea323e3d29c5f2e01c19f0d84c7eb897661e991ce8b8757b9e
+FROM php:8.1-fpm@sha256:6cacc4cdc19e7d1e2216569cc205249946f9fa332932c27ea86a27f8e3719ce6
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -117,6 +117,7 @@ COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
 USER www-data
