@@ -1,4 +1,4 @@
-FROM debian:buster-slim@sha256:91b2ec3340d52126267e0ff5dbb3cfd4c97c3a20b161a6f5ce7ca9560ec1794f
+FROM debian:buster-slim@sha256:09bdc82c64e5e106d3f97cc8d834ef30eb46fab5fdbfde488aec554e94cd83a7
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -45,7 +45,7 @@ RUN apt-get update \
 
  # Download and prepare Postfix sources
 RUN curl -fL -o /tmp/postfix.tar.gz \
-         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.7.3.tar.gz \
+         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.8.3.tar.gz \
  && tar -xzf /tmp/postfix.tar.gz -C /tmp/
 
  # Build Postfix from sources
