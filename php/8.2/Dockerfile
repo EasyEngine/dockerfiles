@@ -116,7 +116,8 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-# COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
 USER www-data
