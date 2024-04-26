@@ -1,5 +1,4 @@
-FROM php:8.2-fpm@sha256:a6040895989bdc8e214c35d5ce01e59a18648a7be38971972d6731ac9587382c
-
+FROM php:8.3-fpm@sha256:136ef3a7ce42b2892be36b6958e77549bbd423ae8ed3615b8717da60d95c5c2b
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
