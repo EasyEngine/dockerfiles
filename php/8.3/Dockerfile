@@ -95,15 +95,14 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-## Newrelic agent does not support PHP 8.3 as of 6th Feb 2023. So, we are commenting it out for now.
-# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-# export NR_INSTALL_USE_CP_NOT_LN=1 && \
-# export NR_INSTALL_SILENT=1 && \
-# /tmp/newrelic-php5-*/newrelic-install install && \
-# rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+export NR_INSTALL_USE_CP_NOT_LN=1 && \
+export NR_INSTALL_SILENT=1 && \
+/tmp/newrelic-php5-*/newrelic-install install && \
+rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
-# ENV NR_PORT=/run/newrelic/newrelic.sock
+ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
