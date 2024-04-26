@@ -1,5 +1,4 @@
-# alpine:latest at 2023-11-10T14:09:58IST
-FROM alpine@sha256:eece025e432126ce23f223450a0326fbebde39cdf496a85d8c016293fc851978
+FROM alpine@sha256:c5b1261d6d3e43071626931fc004f70149baeba2c8ec672bd4f27761f8e1ad6b
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
