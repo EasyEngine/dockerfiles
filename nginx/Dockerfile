@@ -1,4 +1,4 @@
-FROM openresty/openresty:1.25.3.1-buster
+FROM openresty/openresty:1.25.3.2-buster
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="nginx"
