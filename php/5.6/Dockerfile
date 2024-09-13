@@ -23,6 +23,7 @@ RUN set -ex; \
 		libzip-dev \
 		mysql-client \
 		ssmtp \
+		tmux \
 		unzip \
 		vim \
 		zip
@@ -97,6 +98,7 @@ COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 
 WORKDIR /var/www/htdocs
+RUN usermod -s /bin/bash www-data
 USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
