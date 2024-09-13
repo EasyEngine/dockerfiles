@@ -25,6 +25,7 @@ RUN set -ex; \
 		libssl-dev \
 		libicu-dev \
 		libwebp-dev \
+		tmux \
 		unzip \
 		vim \
 		zip
@@ -116,6 +117,7 @@ COPY docker-entrypoint.sh /usr/local/bin/
 COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 
 WORKDIR /var/www/htdocs
+RUN usermod -s /bin/bash www-data
 USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]

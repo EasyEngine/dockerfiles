@@ -1,4 +1,4 @@
-FROM php:8.3.10-fpm
+FROM php:8.3.11-fpm
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -26,6 +26,7 @@ RUN set -ex; \
 		libzip-dev \
 		libssl-dev \
 		libgmp-dev \
+		tmux \
 		unzip \
 		vim \
 		zip
@@ -120,6 +121,7 @@ COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
+RUN usermod -s /bin/bash www-data
 USER www-data
 
 ENTRYPOINT ["docker-entrypoint.sh"]
