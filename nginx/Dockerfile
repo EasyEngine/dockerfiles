@@ -7,4 +7,6 @@ LABEL org.label-schema.name="nginx"
 RUN mkdir -p /var/log/nginx; \
     mkdir -p /usr/local/openresty/nginx/conf/conf.d
 COPY conf /usr/local/openresty/nginx/conf
+COPY bashrc /root/.bashrc
+WORKDIR /var/www/htdocs
 EXPOSE 80
