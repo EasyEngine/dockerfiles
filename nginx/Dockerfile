@@ -9,4 +9,6 @@ RUN mkdir -p /var/log/nginx; \
 COPY conf /usr/local/openresty/nginx/conf
 COPY bashrc /root/.bashrc
 WORKDIR /var/www/htdocs
+RUN usermod -s /bin/bash www-data
+USER www-data
 EXPOSE 80
