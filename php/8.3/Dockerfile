@@ -31,8 +31,8 @@ RUN set -ex; \
 		vim \
 		zip
 
-RUN pecl install imagick; \
-	pecl install memcached; \
+# RUN pecl install imagick; \ # This is not working with PHP 8.3
+RUN pecl install memcached; \
 	pecl install redis; \
 	pecl install apcu; \
 	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
@@ -64,6 +64,24 @@ RUN pecl install imagick; \
 	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
+
+# Temp workaround for imagick
+RUN apt update && apt install -y git --no-install-recommends && \
+	git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
+	cd /tmp/imagick && \
+	git fetch origin master && \
+	git switch master && \
+	cd /tmp/imagick && \
+	phpize && \
+	./configure && \
+	make && \
+	make install && \
+	docker-php-ext-enable imagick && \
+	apt remove -y git && \
+	apt autoremove -y && \
+	apt clean && \
+	rm -rf /var/lib/apt/lists/* && \
+	rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
