@@ -1,4 +1,4 @@
-FROM jwilder/nginx-proxy:1.6.3
+FROM jwilder/nginx-proxy:1.6.4
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="nginx-proxy"
