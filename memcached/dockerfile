@@ -1,0 +1,6 @@
+FROM docker.io/library/memcached@sha256:6ce1e76815f51d9be35f86b3015604134ee781ce26acb3d695ce4388123a422e
+
+LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
+LABEL org.label-schema.schema-version="1.0.0-rc1"
+LABEL org.label-schema.vendor="EasyEngine"
+LABEL org.label-schema.name="memcached"
