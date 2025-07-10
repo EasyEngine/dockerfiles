@@ -106,6 +106,16 @@ updates:
       - mrrobot47
 
   - package-ecosystem: "docker"
+    directory: "/php/8.4"
+    ignore:
+      - dependency-name: "php"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - mrrobot47
+
+  - package-ecosystem: "docker"
     directory: "/php/stable"
     ignore:
       - dependency-name: "php"
