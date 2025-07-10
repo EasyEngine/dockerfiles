@@ -1,4 +1,4 @@
-FROM php:8.4.1-fpm
+FROM php:8.4.10-fpm
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -30,20 +30,6 @@ RUN set -ex; \
 		unzip \
 		vim \
 		zip
-
-# RUN curl -fsSLOJ https://pecl.php.net/get/mcrypt/stable \
-# 	&& tar -xf mcrypt-1.0.7.tgz
-# RUN cd mcrypt-1.0.7 \
-# 	&& phpize \
-# 	&& ./configure \
-# 	&& make \
-# 	&& curl -fsSLOJ https://github.com/php/pecl-encryption-mcrypt/commit/5b16bf1c97c1bbab400fc877285bf0919ae73256.diff \
-# 	&& git apply 5b16bf1c97c1bbab400fc877285bf0919ae73256.diff \
-# 	&& make test \
-# 	&& cp modules/*.so $(pecl config-get ext_dir) \
-# 	&& cd .. \
-# 	&& rm -rf mcrypt-1.0.7.tgz mcrypt-1.0.7
-# RUN echo extension="mcrypt.so" > /usr/local/etc/php/conf.d/php-ext-mcrypt.ini
 
 RUN pecl install imagick; \
 	pecl install memcached; \
@@ -133,14 +119,14 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-# RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-# curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-# export NR_INSTALL_USE_CP_NOT_LN=1 && \
-# export NR_INSTALL_SILENT=1 && \
-# /tmp/newrelic-php5-*/newrelic-install install && \
-# rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+export NR_INSTALL_USE_CP_NOT_LN=1 && \
+export NR_INSTALL_SILENT=1 && \
+/tmp/newrelic-php5-*/newrelic-install install && \
+rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
 
-# ENV NR_PORT=/run/newrelic/newrelic.sock
+ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -153,8 +139,8 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-# COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
-# COPY newrelic.ini /data/newrelic.ini
+COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
 RUN usermod -s /bin/bash www-data
