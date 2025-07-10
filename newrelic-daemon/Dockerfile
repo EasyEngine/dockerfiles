@@ -1,4 +1,4 @@
-FROM alpine:3.21.2
+FROM alpine:3.22.0
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
