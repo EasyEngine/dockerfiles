@@ -11,7 +11,6 @@ RUN set -ex; \
 		imagemagick \
 		less \
 		mariadb-client msmtp \
-		libc-client-dev \
 		libfreetype6-dev \
 		libjpeg-dev \
 		libjpeg62-turbo-dev \
@@ -30,6 +29,11 @@ RUN set -ex; \
 		unzip \
 		vim \
 		zip
+
+# Install libc-client-dev for imap from sury as not available for debian trixie
+RUN curl -fsSL https://packages.sury.org/php/README.txt | bash && \
+	apt-get update && \
+	apt-get install -y libc-client-dev
 
 RUN pecl install imagick; \
 	pecl install memcached; \
