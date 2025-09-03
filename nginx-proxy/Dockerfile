@@ -6,6 +6,7 @@ LABEL org.label-schema.name="nginx-proxy"
 COPY nginx.tmpl /app/
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY version.conf /version.conf
+COPY default.html /etc/nginx/html/default.html
 
 RUN apt-get update \
     && apt-get install --no-install-recommends apache2-utils -y && rm -rf /var/lib/apt/lists/*
