@@ -190,8 +190,21 @@ server {
 	{{ end }}
 
 	root /etc/nginx/html;
+	
+	# Custom error page for 503
+	error_page 503 /default.html;
+	
 	location / {
-		try_files /default.html =404;
+		return 503;
+	}
+	
+	# Serve the error page without redirect
+	location = /default.html {
+		root /etc/nginx/html;
+		internal;
+		add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+		add_header Pragma "no-cache" always;
+		add_header Expires "0" always;
 	}
 }
 
@@ -206,8 +219,21 @@ server {
 	{{ end }}
 
 	root /etc/nginx/html;
+	
+	# Custom error page for 503
+	error_page 503 /default.html;
+	
 	location / {
-		try_files /default.html =404;
+		return 503;
+	}
+	
+	# Serve the error page without redirect
+	location = /default.html {
+		root /etc/nginx/html;
+		internal;
+		add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+		add_header Pragma "no-cache" always;
+		add_header Expires "0" always;
 	}
 
 	ssl_session_tickets off;
