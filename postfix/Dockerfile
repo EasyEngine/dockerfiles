@@ -1,4 +1,4 @@
-FROM debian:13.0-slim
+FROM debian:13.1-slim
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
