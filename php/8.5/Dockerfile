@@ -1,4 +1,4 @@
-FROM php:8.4.15-fpm
+FROM php:8.5.0-fpm
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -35,15 +35,14 @@ RUN curl -fsSL https://packages.sury.org/php/README.txt | bash && \
 	apt-get update && \
 	apt-get install -y libc-client-dev
 
-RUN pecl install imagick; \
-	pecl install memcached; \
+RUN pecl install memcached; \
 	pecl install redis; \
 	pecl install apcu; \
 	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
 	pecl install -n mcrypt; \
 	echo "yes" | pecl install imap; \
-	pecl install gmagick-2.0.6RC1; \
 	pecl install timezonedb; \
+    # pecl install imagick; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
@@ -66,30 +65,29 @@ RUN pecl install imagick; \
 	docker-php-ext-enable redis; \
 	docker-php-ext-enable timezonedb; \
 	docker-php-ext-enable apcu; \
-	docker-php-ext-enable imagick; \
+	# docker-php-ext-enable imagick; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
-	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	echo "extension=imap.so" > /usr/local/etc/php/conf.d/imap.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
 
 # Temp workaround for imagick
-# RUN apt update && apt install -y git --no-install-recommends && \
-# 	git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
-# 	cd /tmp/imagick && \
-# 	git fetch origin master && \
-# 	git switch master && \
-# 	cd /tmp/imagick && \
-# 	phpize && \
-# 	./configure && \
-# 	make && \
-# 	make install && \
-# 	docker-php-ext-enable imagick && \
-# 	apt remove -y git && \
-# 	apt autoremove -y && \
-# 	apt clean && \
-# 	rm -rf /var/lib/apt/lists/* && \
-# 	rm -rf /tmp/imagick
+RUN apt update && apt install -y git --no-install-recommends && \
+    git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
+    cd /tmp/imagick && \
+    git fetch origin master && \
+    git switch master && \
+    cd /tmp/imagick && \
+    phpize && \
+    ./configure && \
+    make && \
+    make install && \
+    docker-php-ext-enable imagick && \
+    apt remove -y git && \
+    apt autoremove -y && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
@@ -123,14 +121,14 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
-curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-export NR_INSTALL_USE_CP_NOT_LN=1 && \
-export NR_INSTALL_SILENT=1 && \
-/tmp/newrelic-php5-*/newrelic-install install && \
-rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
-
-ENV NR_PORT=/run/newrelic/newrelic.sock
+#RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+#curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+#export NR_INSTALL_USE_CP_NOT_LN=1 && \
+#export NR_INSTALL_SILENT=1 && \
+#/tmp/newrelic-php5-*/newrelic-install install && \
+#rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+#
+#ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -143,8 +141,8 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
-COPY newrelic.ini /data/newrelic.ini
+#COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+#COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
 RUN usermod -s /bin/bash www-data
