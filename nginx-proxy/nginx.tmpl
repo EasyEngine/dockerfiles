@@ -61,13 +61,45 @@
 		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
 		include /etc/nginx/vhost.d/default_acl;
 		{{ end }}
-	{{ else if (exists "/etc/nginx/htpasswd/default") }}
+	{{/* 
+		Wildcard htpasswd support for WordPress Multisite.
+		Naming convention: _wildcard.domain.com applies to domain.com AND *.domain.com
+		Note: For multi-level TLDs (e.g., domain.co.uk), create specific htpasswd files.
+	*/}}
+	{{ else }}
+		{{ $hostParts := split .Host "." }}
+		{{ $partsLen := len $hostParts }}
+		{{ if ge $partsLen 2 }}
+			{{/* Build base domain from last 2 parts: e.g., blog.domain.com -> domain.com */}}
+			{{ $lastIndex := sub $partsLen 1 }}
+			{{ $secondLastIndex := sub $partsLen 2 }}
+			{{ $baseDomain := printf "%s.%s" (index $hostParts $secondLastIndex) (index $hostParts $lastIndex) }}
+			{{ $wildcardHtpasswd := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain }}
+			{{ if (exists $wildcardHtpasswd) }}
+		auth_basic      "Restricted {{ .Host }}";
+		auth_basic_user_file    {{ $wildcardHtpasswd }};
+				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+		include /etc/nginx/vhost.d/default_acl;
+				{{ end }}
+			{{ else if (exists "/etc/nginx/htpasswd/default") }}
 		auth_basic      "Restricted {{ .Host }}";
 		auth_basic_user_file    /etc/nginx/htpasswd/default;
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
 		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
 		include /etc/nginx/vhost.d/default_acl;
+				{{ end }}
+			{{ end }}
+		{{ else if (exists "/etc/nginx/htpasswd/default") }}
+		auth_basic      "Restricted {{ .Host }}";
+		auth_basic_user_file    /etc/nginx/htpasswd/default;
+			{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+			{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+		include /etc/nginx/vhost.d/default_acl;
+			{{ end }}
 		{{ end }}
 	{{ end }}
 
