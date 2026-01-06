@@ -48,8 +48,9 @@ This file will apply HTTP auth to:
 The template checks for htpasswd files in this order:
 
 1. **Exact match**: `/etc/nginx/htpasswd/blog.domain.com`
-2. **Wildcard match**: `/etc/nginx/htpasswd/_wildcard.domain.com`
-3. **Default**: `/etc/nginx/htpasswd/default`
+2. **Wildcard (3 parts)**: `/etc/nginx/htpasswd/_wildcard.domain.com` (for multi-level TLD support)
+3. **Wildcard (2 parts)**: `/etc/nginx/htpasswd/_wildcard.com` (fallback)
+4. **Default**: `/etc/nginx/htpasswd/default`
 
 #### Example Setup
 
@@ -63,13 +64,20 @@ htpasswd -c /etc/nginx/htpasswd/api.example.com api_user
 
 #### Multi-level TLDs
 
-For domains with multi-level TLDs (e.g., `domain.co.uk`, `domain.com.au`), the wildcard logic extracts the last 2 parts only. Create specific htpasswd files for these cases:
+Multi-level TLDs (e.g., `.co.in`, `.com.au`) are fully supported. The template checks progressively:
+
+1. **Last 3 parts first**: `_wildcard.domain.co.in` for `blog.domain.co.in`
+2. **Then last 2 parts**: `_wildcard.co.in` as fallback
 
 ```bash
-# For domain.co.uk multisite
-htpasswd -c /etc/nginx/htpasswd/domain.co.uk username
-htpasswd -c /etc/nginx/htpasswd/blog.domain.co.uk username
-# etc.
+# For domain.co.in multisite
+htpasswd -c /etc/nginx/htpasswd/_wildcard.domain.co.in admin
+
+# This will protect:
+# - domain.co.in
+# - blog.domain.co.in
+# - shop.domain.co.in
+# - etc.
 ```
 
 ---
