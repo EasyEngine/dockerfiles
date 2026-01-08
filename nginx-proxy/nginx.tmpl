@@ -61,13 +61,90 @@
 		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
 		include /etc/nginx/vhost.d/default_acl;
 		{{ end }}
-	{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ .Host }}";
-		auth_basic_user_file    /etc/nginx/htpasswd/default;
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
+	{{/*
+		Wildcard htpasswd support for WordPress Multisite.
+		Naming convention: _wildcard.domain.com applies to domain.com AND *.domain.com
+		Supports multi-level TLDs: _wildcard.domain.co.in works for domain.co.in AND *.domain.co.in
+
+		Lookup order (after exact match check on line 56):
+		- For 4+ part domains: checks _wildcard.{last-3-parts}, then _wildcard.{last-2-parts}, then default
+		- For 2-3 part domains: checks _wildcard.{last-2-parts}, then falls back to default
+		- For single-part hostnames: uses default only
+
+		Note: Uses sprig's splitList and sub functions (available in docker-gen 0.7.4+)
+	*/}}
+	{{ else }}
+		{{ $hostParts := splitList "." .Host }}
+		{{ $partsLen := len $hostParts }}
+		{{/* For 4+ part domains, check last 3 parts first (e.g., _wildcard.domain.co.in for blog.domain.co.in) */}}
+		{{ if ge $partsLen 4 }}
+			{{ $idx3 := sub $partsLen 3 }}
+			{{ $idx2 := sub $partsLen 2 }}
+			{{ $idx1 := sub $partsLen 1 }}
+			{{ $baseDomain3 := printf "%s.%s.%s" (index $hostParts $idx3) (index $hostParts $idx2) (index $hostParts $idx1) }}
+			{{ $wildcardHtpasswd3 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain3 }}
+			{{ if (exists $wildcardHtpasswd3) }}
+				auth_basic      "Restricted {{ .Host }}";
+				auth_basic_user_file    {{ ($wildcardHtpasswd3) }};
+				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+					include /etc/nginx/vhost.d/default_acl;
+				{{ end }}
+			{{ else }}
+				{{/* Fallback: check last 2 parts (e.g., _wildcard.co.in for blog.domain.co.in) */}}
+				{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}
+				{{ $wildcardHtpasswd2 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain2 }}
+				{{ if (exists $wildcardHtpasswd2) }}
+					auth_basic      "Restricted {{ .Host }}";
+					auth_basic_user_file    {{ ($wildcardHtpasswd2) }};
+					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+						include /etc/nginx/vhost.d/default_acl;
+					{{ end }}
+				{{ else if (exists "/etc/nginx/htpasswd/default") }}
+					auth_basic      "Restricted {{ .Host }}";
+					auth_basic_user_file    /etc/nginx/htpasswd/default;
+					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+						include /etc/nginx/vhost.d/default_acl;
+					{{ end }}
+				{{ end }}
+			{{ end }}
+		{{ else if ge $partsLen 2 }}
+			{{/* For 2-3 part domains, check last 2 parts (e.g., _wildcard.example.com for blog.example.com or example.com) */}}
+			{{ $idx2 := sub $partsLen 2 }}
+			{{ $idx1 := sub $partsLen 1 }}
+			{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}
+			{{ $wildcardHtpasswd2 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain2 }}
+			{{ if (exists $wildcardHtpasswd2) }}
+				auth_basic      "Restricted {{ .Host }}";
+				auth_basic_user_file    {{ ($wildcardHtpasswd2) }};
+				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+					include /etc/nginx/vhost.d/default_acl;
+				{{ end }}
+			{{ else if (exists "/etc/nginx/htpasswd/default") }}
+				auth_basic      "Restricted {{ .Host }}";
+				auth_basic_user_file    /etc/nginx/htpasswd/default;
+				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+					include /etc/nginx/vhost.d/default_acl;
+				{{ end }}
+			{{ end }}
+		{{ else if (exists "/etc/nginx/htpasswd/default") }}
+			{{/* Single-part hostname - use default */}}
+			auth_basic      "Restricted {{ .Host }}";
+			auth_basic_user_file    /etc/nginx/htpasswd/default;
+			{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+				include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+			{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+				include /etc/nginx/vhost.d/default_acl;
+			{{ end }}
 		{{ end }}
 	{{ end }}
 
@@ -146,8 +223,8 @@ map $scheme $proxy_x_forwarded_ssl {
 gzip_types text/plain text/css application/javascript application/json application/x-javascript text/xml application/xml application/xml+rss text/javascript;
 
 log_format vhost '$host $remote_addr - $remote_user [$time_local] '
-                 '"$request" $status $body_bytes_sent '
-                 '"$http_referer" "$http_user_agent"';
+				 '"$request" $status $body_bytes_sent '
+				 '"$http_referer" "$http_user_agent"';
 
 {{ if $.Env.RESOLVERS }}
 resolver {{ $.Env.RESOLVERS }};
@@ -190,14 +267,14 @@ server {
 	{{ end }}
 
 	root /etc/nginx/html;
-	
+
 	# Custom error page for 503
 	error_page 503 /default.html;
-	
+
 	location / {
 		return 503;
 	}
-	
+
 	# Serve the error page without redirect
 	location = /default.html {
 		root /etc/nginx/html;
@@ -219,14 +296,14 @@ server {
 	{{ end }}
 
 	root /etc/nginx/html;
-	
+
 	# Custom error page for 503
 	error_page 503 /default.html;
-	
+
 	location / {
 		return 503;
 	}
-	
+
 	# Serve the error page without redirect
 	location = /default.html {
 		root /etc/nginx/html;
