@@ -67,8 +67,8 @@
 		Supports multi-level TLDs: _wildcard.domain.co.in works for domain.co.in AND *.domain.co.in
 
 		Lookup order (after exact match check on line 56):
-		- For 3+ part domains: checks _wildcard.{last-3-parts}, then falls back to default
-		- For 2-part domains: checks _wildcard.{domain}, then falls back to default
+		- For 4+ part domains: checks _wildcard.{last-3-parts}, then _wildcard.{last-2-parts}, then default
+		- For 2-3 part domains: checks _wildcard.{last-2-parts}, then falls back to default
 		- For single-part hostnames: uses default only
 
 		Note: Uses sprig's splitList and sub functions (available in docker-gen 0.7.4+)
@@ -76,8 +76,8 @@
 	{{ else }}
 		{{ $hostParts := splitList "." .Host }}
 		{{ $partsLen := len $hostParts }}
-		{{/* Check last 3 parts first (e.g., domain.co.in for blog.domain.co.in) */}}
-		{{ if ge $partsLen 3 }}
+		{{/* For 4+ part domains, check last 3 parts first (e.g., _wildcard.domain.co.in for blog.domain.co.in) */}}
+		{{ if ge $partsLen 4 }}
 			{{ $idx3 := sub $partsLen 3 }}
 			{{ $idx2 := sub $partsLen 2 }}
 			{{ $idx1 := sub $partsLen 1 }}
@@ -91,17 +91,30 @@
 				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
 					include /etc/nginx/vhost.d/default_acl;
 				{{ end }}
-			{{ else if (exists "/etc/nginx/htpasswd/default") }}
-				auth_basic      "Restricted {{ .Host }}";
-				auth_basic_user_file    /etc/nginx/htpasswd/default;
-				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-					include /etc/nginx/vhost.d/default_acl;
+			{{ else }}
+				{{/* Fallback: check last 2 parts (e.g., _wildcard.co.in for blog.domain.co.in) */}}
+				{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}
+				{{ $wildcardHtpasswd2 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain2 }}
+				{{ if (exists $wildcardHtpasswd2) }}
+					auth_basic      "Restricted {{ .Host }}";
+					auth_basic_user_file    {{ ($wildcardHtpasswd2) }};
+					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+						include /etc/nginx/vhost.d/default_acl;
+					{{ end }}
+				{{ else if (exists "/etc/nginx/htpasswd/default") }}
+					auth_basic      "Restricted {{ .Host }}";
+					auth_basic_user_file    /etc/nginx/htpasswd/default;
+					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
+						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
+					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+						include /etc/nginx/vhost.d/default_acl;
+					{{ end }}
 				{{ end }}
 			{{ end }}
 		{{ else if ge $partsLen 2 }}
-			{{/* Only 2 parts (e.g., domain.com) - check wildcard directly */}}
+			{{/* For 2-3 part domains, check last 2 parts (e.g., _wildcard.example.com for blog.example.com or example.com) */}}
 			{{ $idx2 := sub $partsLen 2 }}
 			{{ $idx1 := sub $partsLen 1 }}
 			{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}

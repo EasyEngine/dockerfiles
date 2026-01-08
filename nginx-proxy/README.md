@@ -48,8 +48,8 @@ This file will apply HTTP auth to:
 The template checks for htpasswd files in this order:
 
 1. **Exact match**: `/etc/nginx/htpasswd/blog.domain.com`
-2. **Wildcard (3 parts)**: `/etc/nginx/htpasswd/_wildcard.domain.com` (for multi-level TLD support)
-3. **Wildcard (2 parts)**: `/etc/nginx/htpasswd/_wildcard.com` (fallback)
+2. **Wildcard (3 parts)**: `/etc/nginx/htpasswd/_wildcard.domain.co.in` (for 4+ part domains only)
+3. **Wildcard (2 parts)**: `/etc/nginx/htpasswd/_wildcard.example.com` (for 2-3 part domains, or fallback)
 4. **Default**: `/etc/nginx/htpasswd/default`
 
 #### Example Setup
@@ -58,19 +58,25 @@ The template checks for htpasswd files in this order:
 # Create wildcard htpasswd for WordPress multisite
 htpasswd -c /etc/nginx/htpasswd/_wildcard.example.com admin
 
+# This protects: example.com, blog.example.com, shop.example.com, etc.
+
 # Optional: Override for a specific subdomain
 htpasswd -c /etc/nginx/htpasswd/api.example.com api_user
 ```
 
 #### Multi-level TLDs
 
-Multi-level TLDs (e.g., `.co.in`, `.com.au`) are fully supported. The template checks progressively:
+Multi-level TLDs (e.g., `.co.in`, `.com.au`) are fully supported:
 
-1. **Last 3 parts first**: `_wildcard.domain.co.in` for `blog.domain.co.in`
-2. **Then last 2 parts**: `_wildcard.co.in` as fallback
+| Host | Wildcard File Checked |
+|------|----------------------|
+| `blog.domain.co.in` (4 parts) | `_wildcard.domain.co.in` first, then `_wildcard.co.in` |
+| `domain.co.in` (3 parts) | `_wildcard.co.in` |
+| `blog.example.com` (3 parts) | `_wildcard.example.com` |
+| `example.com` (2 parts) | `_wildcard.example.com` |
 
 ```bash
-# For domain.co.in multisite
+# For domain.co.in multisite (multi-level TLD)
 htpasswd -c /etc/nginx/htpasswd/_wildcard.domain.co.in admin
 
 # This will protect:
