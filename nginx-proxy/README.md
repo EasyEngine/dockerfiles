@@ -139,6 +139,7 @@ deny all;
 | `VIRTUAL_PROTO` | Protocol (`http`, `https`, `uwsgi`, `fastcgi`) | `http` |
 | `HTTPS_METHOD` | `redirect`, `noredirect`, `nohttps` | `redirect` |
 | `SSL_POLICY` | SSL/TLS policy | `Mozilla-Modern` |
+| `SSL_STAPLING` | Enable OCSP stapling (`on` or `off`) | `on` |
 | `HSTS` | HSTS header value | `max-age=31536000` |
 | `CERT_NAME` | Custom certificate name | auto-detected |
 | `NETWORK_ACCESS` | `external` or `internal` | `external` |
