@@ -358,6 +358,9 @@ server {
 {{/* Get the HSTS defined by containers w/ the same vhost, falling back to "max-age=31536000" */}}
 {{ $hsts := or (first (groupByKeys $containers "Env.HSTS")) "max-age=31536000" }}
 
+{{/* Get the SSL_STAPLING defined by containers w/ the same vhost, falling back to "on" */}}
+{{ $ssl_stapling := or (first (groupByKeys $containers "Env.SSL_STAPLING")) "on" }}
+
 {{/* Get the VIRTUAL_ROOT By containers w/ use fastcgi root */}}
 {{ $vhost_root := or (first (groupByKeys $containers "Env.VIRTUAL_ROOT")) "/var/www/public" }}
 
@@ -445,7 +448,7 @@ server {
 	ssl_dhparam {{ printf "/etc/nginx/certs/%s.dhparam.pem" $cert }};
 	{{ end }}
 
-	{{ if (exists (printf "/etc/nginx/certs/%s.chain.pem" $cert)) }}
+	{{ if (and (eq $ssl_stapling "on") (exists (printf "/etc/nginx/certs/%s.chain.pem" $cert))) }}
 	ssl_stapling on;
 	ssl_stapling_verify on;
 	ssl_trusted_certificate {{ printf "/etc/nginx/certs/%s.chain.pem" $cert }};
