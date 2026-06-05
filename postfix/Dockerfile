@@ -1,4 +1,4 @@
-FROM debian:13.4-slim
+FROM debian:13.5-slim
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -15,14 +15,15 @@ RUN apt-get update \
             m4 \
             inetutils-syslogd \
             ca-certificates \
+            adduser \
  && update-ca-certificates \
     \
  # Install Postfix dependencies
  && apt-get install -y --no-install-recommends --no-install-suggests \
-            libpcre3 libicu72 \
+            libpcre2-8-0 libicu76 \
             libdb5.3 libpq5 libmariadb3 libmariadb-dev-compat libsqlite3-0 \
             libsasl2-2 \
-            libldap-2.4 \
+            libldap2 \
             libsasl2-modules \
     \
  # Install tools for building
@@ -35,7 +36,7 @@ RUN apt-get update \
  # Install Postfix build dependencies
  && buildDeps=" \
         libssl-dev \
-        libpcre3-dev libicu-dev \
+        libpcre2-dev libicu-dev \
         libdb-dev libpq-dev libmariadb-dev libsqlite3-dev \
         libsasl2-dev \
         libldap2-dev \
@@ -53,16 +54,17 @@ RUN cd /tmp/postfix-* \
     && sed -i -e "s:/usr/local/:/usr/:g" conf/master.cf \
     && make makefiles \
          CCARGS="-DHAS_SHL_LOAD -DUSE_TLS \
-                 -DHAS_PCRE $(pcre-config --cflags) \
+                 -DHAS_PCRE=2 $(pcre2-config --cflags) \
                  -DHAS_PGSQL -I/usr/include/postgresql \
                  -DHAS_MYSQL $(mysql_config --include) \
                  -DHAS_SQLITE -I/usr/include \
                  -DHAS_LDAP -I/usr/include \
                  -DUSE_CYRUS_SASL -I/usr/include/sasl \
                  -DUSE_SASL_AUTH -DDEF_SASL_SERVER=\\\"dovecot\\\" \
-                 -DUSE_LDAP_SASL" \
+                 -DUSE_LDAP_SASL \
+                 -DNO_NIS" \
          AUXLIBS="-lssl -lcrypto -lsasl2" \
-         AUXLIBS_PCRE="$(pcre-config --libs)" \
+         AUXLIBS_PCRE="$(pcre2-config --libs8)" \
          AUXLIBS_PGSQL="-lpq" \
          AUXLIBS_MYSQL="$(mysql_config --libs)" \
          AUXLIBS_SQLITE="-lsqlite3 -lpthread" \
