@@ -15,6 +15,7 @@ RUN apt-get update \
             m4 \
             inetutils-syslogd \
             ca-certificates \
+            adduser \
  && update-ca-certificates \
     \
  # Install Postfix dependencies
@@ -53,16 +54,17 @@ RUN cd /tmp/postfix-* \
     && sed -i -e "s:/usr/local/:/usr/:g" conf/master.cf \
     && make makefiles \
          CCARGS="-DHAS_SHL_LOAD -DUSE_TLS \
-                 -DHAS_PCRE2 $(pcre2-config --cflags) \
+                 -DHAS_PCRE=2 $(pcre2-config --cflags) \
                  -DHAS_PGSQL -I/usr/include/postgresql \
                  -DHAS_MYSQL $(mysql_config --include) \
                  -DHAS_SQLITE -I/usr/include \
                  -DHAS_LDAP -I/usr/include \
                  -DUSE_CYRUS_SASL -I/usr/include/sasl \
                  -DUSE_SASL_AUTH -DDEF_SASL_SERVER=\\\"dovecot\\\" \
-                 -DUSE_LDAP_SASL" \
+                 -DUSE_LDAP_SASL \
+                 -DNO_NIS" \
          AUXLIBS="-lssl -lcrypto -lsasl2" \
-         AUXLIBS_PCRE="$(pcre2-config --libs)" \
+         AUXLIBS_PCRE="$(pcre2-config --libs8)" \
          AUXLIBS_PGSQL="-lpq" \
          AUXLIBS_MYSQL="$(mysql_config --libs)" \
          AUXLIBS_SQLITE="-lsqlite3 -lpthread" \
