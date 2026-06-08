@@ -1,4 +1,4 @@
-FROM openresty/openresty:1.29.2.5-bookworm
+FROM openresty/openresty:1.31.1.1-bookworm
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="nginx"
