@@ -29,7 +29,7 @@ htpasswd -c /etc/nginx/htpasswd/default username
 
 ### Wildcard Authentication (WordPress Multisite)
 
-For WordPress multisite with subdomain configuration, you can use a single htpasswd file to protect both the main domain and all subdomains.
+For WordPress multisite with subdomain configuration, the container's `VIRTUAL_HOST` contains both `domain.com` and `*.domain.com`. The `*.domain.com` entry gets its own server block, and a single `_wildcard.` htpasswd file protects it.
 
 #### Naming Convention
 
@@ -39,52 +39,34 @@ Use the `_wildcard.` prefix:
 /etc/nginx/htpasswd/_wildcard.domain.com
 ```
 
-This file will apply HTTP auth to:
-- `domain.com` (main domain)
-- `*.domain.com` (all subdomains like `blog.domain.com`, `shop.domain.com`, etc.)
+This file applies only to hosts that literally start with `*.`, i.e. the `*.domain.com` server block (all subdomains like `blog.domain.com`, `shop.domain.com` that are served by it). It does not apply to `domain.com` itself, which uses its exact file `/etc/nginx/htpasswd/domain.com`, and it never applies to a separately configured host such as a different site on `shop.domain.com`.
+
+There are no label-counting or multi-level TLD heuristics: `*.domain.co.in` maps to `_wildcard.domain.co.in` and `*.ms.dev.example.com` maps to `_wildcard.ms.dev.example.com`.
 
 #### Lookup Order
 
-The template checks for htpasswd files in this order:
+For each host, the template checks for htpasswd files in this order:
 
-1. **Exact match**: `/etc/nginx/htpasswd/blog.domain.com`
-2. **Wildcard (3 parts)**: `/etc/nginx/htpasswd/_wildcard.domain.co.in` (for 4+ part domains only)
-3. **Wildcard (2 parts)**: `/etc/nginx/htpasswd/_wildcard.example.com` (for 2-3 part domains, or fallback)
-4. **Default**: `/etc/nginx/htpasswd/default`
+1. **Exact match**: `/etc/nginx/htpasswd/<host>` (e.g. `domain.com`)
+2. **Wildcard**: `/etc/nginx/htpasswd/_wildcard.<X>`, only when the host is `*.<X>`
+3. **Default**: `/etc/nginx/htpasswd/default`
+
+| Host | Files checked |
+|------|---------------|
+| `example.com` | `example.com`, then `default` |
+| `*.example.com` | `*.example.com`, then `_wildcard.example.com`, then `default` |
+| `shop.example.com` (its own `VIRTUAL_HOST`) | `shop.example.com`, then `default` |
+| `*.domain.co.in` | `*.domain.co.in`, then `_wildcard.domain.co.in`, then `default` |
 
 #### Example Setup
 
 ```bash
-# Create wildcard htpasswd for WordPress multisite
+# Protect a WordPress subdomain multisite (VIRTUAL_HOST=example.com,*.example.com)
+htpasswd -c /etc/nginx/htpasswd/example.com admin
 htpasswd -c /etc/nginx/htpasswd/_wildcard.example.com admin
-
-# This protects: example.com, blog.example.com, shop.example.com, etc.
-
-# Optional: Override for a specific subdomain
-htpasswd -c /etc/nginx/htpasswd/api.example.com api_user
 ```
 
-#### Multi-level TLDs
-
-Multi-level TLDs (e.g., `.co.in`, `.com.au`) are fully supported:
-
-| Host | Wildcard File Checked |
-|------|----------------------|
-| `blog.domain.co.in` (4 parts) | `_wildcard.domain.co.in` first, then `_wildcard.co.in` |
-| `domain.co.in` (3 parts) | `_wildcard.co.in` |
-| `blog.example.com` (3 parts) | `_wildcard.example.com` |
-| `example.com` (2 parts) | `_wildcard.example.com` |
-
-```bash
-# For domain.co.in multisite (multi-level TLD)
-htpasswd -c /etc/nginx/htpasswd/_wildcard.domain.co.in admin
-
-# This will protect:
-# - domain.co.in
-# - blog.domain.co.in
-# - shop.domain.co.in
-# - etc.
-```
+When auth is enabled, the ACL include follows the same mapping: a `*.<X>` host uses `/etc/nginx/vhost.d/_wildcard.<X>_acl` (see below).
 
 ---
 
@@ -95,6 +77,9 @@ Create ACL files to restrict access by IP:
 ```bash
 # Per-domain ACL
 /etc/nginx/vhost.d/example.com_acl
+
+# ACL for a *.example.com host
+/etc/nginx/vhost.d/_wildcard.example.com_acl
 
 # Default ACL for all sites
 /etc/nginx/vhost.d/default_acl
@@ -165,5 +150,5 @@ services:
     image: wordpress
     environment:
       - VIRTUAL_HOST=example.com,*.example.com
-    # HTTP auth via /etc/nginx/htpasswd/_wildcard.example.com
+    # HTTP auth via /etc/nginx/htpasswd/example.com and /etc/nginx/htpasswd/_wildcard.example.com
 ```
