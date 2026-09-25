@@ -1,4 +1,4 @@
-FROM php:8.5.7-fpm
+FROM php:8.5.11-fpm
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
