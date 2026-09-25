@@ -5,7 +5,9 @@ LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
 
+# bullseye-security was purged from deb.debian.org after Debian 11 LTS ended; use its final snapshot.
 RUN set -ex; \
+	sed -i 's|^deb http://deb.debian.org/debian-security bullseye-security|deb [check-valid-until=no] http://snapshot.debian.org/archive/debian-security/20260901T000000Z bullseye-security|' /etc/apt/sources.list; \
 	apt-get update; \
 	apt-get install -y --no-install-recommends \
 		imagemagick \
