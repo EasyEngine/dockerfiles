@@ -107,9 +107,8 @@ RUN curl -sSL "https://getcomposer.org/installer" | php \
 		&& mv composer.phar /usr/local/bin/composer
 
 # Install wp-cli
-RUN curl -O "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
-		&& chmod +x wp-cli.phar \
-		&& mv wp-cli.phar /usr/local/bin/wp
+RUN curl -fsSLo /usr/local/bin/wp "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
+		&& chmod +x /usr/local/bin/wp
 
 # Setup a config file
 RUN mkdir -p /etc/wp-cli
