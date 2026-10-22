@@ -48,7 +48,7 @@ RUN pecl install memcached; \
 	docker-php-ext-install gd; \
 	docker-php-ext-install mysqli; \
 	docker-php-ext-install pdo_mysql; \
-	docker-php-ext-install opcache; \
+	# opcache is built into PHP 8.5, so docker-php-ext-install opcache would fail
 	docker-php-ext-install soap; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
