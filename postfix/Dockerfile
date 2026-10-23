@@ -45,8 +45,13 @@ RUN apt-get update \
             $buildDeps
 
  # Download and prepare Postfix sources
+ # 3.11 is the first release whose makedefs knows Linux kernel 7.
+ # The checksum is of the tarball verified against Wietse Venema's signature (key 0C0B590E80CA15A7).
+ARG POSTFIX_VERSION=3.11.7
+ARG POSTFIX_SHA256=a2f3242345753448072177fae83c322a403c9263696996406201145dab8e8625
 RUN curl -fL -o /tmp/postfix.tar.gz \
-         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-3.8.3.tar.gz \
+         http://ftp.porcupine.org/mirrors/postfix-release/official/postfix-${POSTFIX_VERSION}.tar.gz \
+ && echo "${POSTFIX_SHA256}  /tmp/postfix.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/postfix.tar.gz -C /tmp/
 
  # Build Postfix from sources
@@ -111,8 +116,6 @@ RUN addgroup --system --gid 91 postfix \
 RUN cd /tmp/postfix-* \
  && install -d /etc/postfix/main.cf.d \
  && install -d /etc/postfix/master.cf.d \
- # Pregenerate Diffie-Hellman parameters (heavy operation)
- && openssl dhparam -out /etc/postfix/dh2048.pem 2048 \
  # Tweak TLS/SSL settings to achieve A grade
  && echo "\n\
         \n# TLS PARAMETERS\
@@ -131,7 +134,6 @@ RUN cd /tmp/postfix-* \
         \nsmtpd_tls_ciphers = high\
         \nsmtpd_tls_mandatory_ciphers = high\
         \nsmtpd_tls_exclude_ciphers = aNULL, LOW, EXP, MEDIUM, ADH, AECDH, MD5, DSS, ECDSA, CAMELLIA128, 3DES, CAMELLIA256, RSA+AES, eNULL\
-        \nsmtpd_tls_dh1024_param_file = /etc/postfix/dh2048.pem\
         \nsmtpd_tls_CApath = /etc/ssl/certs\
         \nsmtpd_tls_cert_file = /etc/ssl/postfix/server.crt\
         \nsmtpd_tls_key_file = /etc/ssl/postfix/server.key\
