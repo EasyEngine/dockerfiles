@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
+        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'newrelic-daemon']
         arch: ['amd64', 'arm64']
     steps:
       - name: Checkout
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
+        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'newrelic-daemon']
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
