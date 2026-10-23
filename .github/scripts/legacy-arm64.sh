@@ -86,8 +86,15 @@ elf() {
 }
 
 compare() {
-	local a=$1 b=$2 nr bad=0 f
+	local a=$1 b=$2 nr absent bad=0 f
 	nr=$(recipe newrelic)
+	# ini settings that don't exist on arm64 for this PHP version (documented in the recipe).
+	absent=$(recipe arm64_ini_absent 2>/dev/null || true)
+	if [ -n "$absent" ]; then
+		grep -E "$absent" "$b/ini" && { echo "arm64 has settings expected to be absent"; bad=1; }
+		grep -E "$absent" "$a/ini" | sed 's/^/absent on arm64: /'
+		grep -vE "$absent" "$a/ini" >"$a/ini.tmp" && mv "$a/ini.tmp" "$a/ini"
+	fi
 	for f in config.json version modules extensions ini fpm etc variables; do
 		[ -e "$a/$f" ] || continue
 		if [ "$nr" = skip ] && [ "$f" != config.json ]; then

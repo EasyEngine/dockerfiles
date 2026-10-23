@@ -51,7 +51,8 @@
     "ref": "7fa7f03ff62d9cd2ed55946223cbc1082a7d5cc5",
     "context": "php/8.0",
     "newrelic": "agent",
-    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions and the New Relic agent (12.11.0.40) pinned to the amd64 ones."
+    "arm64_ini_absent": "^opcache\\.jit",
+    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions and the New Relic agent (12.11.0.40) pinned to the amd64 ones. PHP 8.0 has no JIT on AArch64 (it came in 8.1), so the opcache.jit* settings don't exist there; JIT is off on amd64 too (opcache.jit_buffer_size=0)."
   },
   "mariadb": {
     "amd64_tag": "v4.9.1",
