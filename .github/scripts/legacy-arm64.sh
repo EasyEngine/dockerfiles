@@ -12,6 +12,7 @@ cmd=$1 img=$2
 shift 2
 dir=$(cd "$(dirname "$0")/../legacy-arm64" && pwd)
 recipe() { jq -er --arg i "$img" '.[$i].'"$1" "$dir/recipes.json"; }
+optional() { jq -r --arg i "$img" '.[$i].'"$1"' // empty' "$dir/recipes.json"; }
 fail() { echo "::error::$img: $*" >&2; exit 1; }
 
 # Host- or arch-specific server variables, excluded from the MariaDB comparison.
@@ -89,7 +90,7 @@ compare() {
 	local a=$1 b=$2 nr absent bad=0 f
 	nr=$(recipe newrelic)
 	# ini settings that don't exist on arm64 for this PHP version (documented in the recipe).
-	absent=$(recipe arm64_ini_absent 2>/dev/null || true)
+	absent=$(optional arm64_ini_absent)
 	if [ -n "$absent" ]; then
 		grep -E "$absent" "$b/ini" && { echo "arm64 has settings expected to be absent"; bad=1; }
 		grep -E "$absent" "$a/ini" | sed 's/^/absent on arm64: /'
