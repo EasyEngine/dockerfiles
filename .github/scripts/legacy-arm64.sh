@@ -22,6 +22,8 @@ prepare() {
 	ref=$(recipe ref) ctx=$(recipe context) nr=$(recipe newrelic)
 	[ "$nr" = unavailable ] && fail "New Relic publishes no aarch64 agent for this PHP version, but the amd64 image has it. Set \"newrelic\": \"skip\" in recipes.json to build arm64 without it, or leave $img amd64-only."
 	rm -rf "$out" && mkdir -p "$out"
+	# Forks may lack the upstream tags these commits sit on.
+	git cat-file -e "$ref^{commit}" 2>/dev/null || git fetch -q --depth=1 https://github.com/EasyEngine/dockerfiles.git "$ref"
 	git archive "$ref" "$ctx" | tar -x -C "$out" --strip-components="$(awk -F/ '{print NF}' <<<"$ctx")"
 	patch -d "$out" -p1 --forward --batch --no-backup-if-mismatch <"$dir/$img.patch"
 	if [ "$nr" = skip ]; then

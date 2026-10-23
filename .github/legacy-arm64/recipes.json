@@ -39,27 +39,27 @@
     "amd64_tag": "v4.13.0",
     "amd64_digest": "sha256:f1a007ff60dd2a831449d8ac7795cc6381577ae887b8f316f3d2c37fabb5261f",
     "amd64_manifest": "sha256:84463e410c19a1b5523dc7ee547042311f53d884ba30353228c47b8fef4b7905",
-    "ref": "v4.13.0",
+    "ref": "7fa7f03ff62d9cd2ed55946223cbc1082a7d5cc5",
     "context": "php/7.4",
     "newrelic": "unavailable",
-    "note": "Built from the v4.13.0 tree. Patch: PECL versions pinned to the amd64 ones."
+    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions pinned to the amd64 ones."
   },
   "php8.0": {
     "amd64_tag": "v4.13.0",
     "amd64_digest": "sha256:8a4848e0e574558dbc3eb7e0f7505d6e93a7d7a341d82120062a8547e1514f5b",
     "amd64_manifest": "sha256:b7da1852dc8820982f61d249cdb4fd6ae124cec9c0f0f4f4435f49670b5c7f90",
-    "ref": "v4.13.0",
+    "ref": "7fa7f03ff62d9cd2ed55946223cbc1082a7d5cc5",
     "context": "php/8.0",
     "newrelic": "agent",
-    "note": "Built from the v4.13.0 tree. Patch: PECL versions and the New Relic agent (12.11.0.40) pinned to the amd64 ones."
+    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions and the New Relic agent (12.11.0.40) pinned to the amd64 ones."
   },
   "mariadb": {
     "amd64_tag": "v4.9.1",
     "amd64_digest": "sha256:607745183a0ecdf3b59ae0ff39d4a64703e85374eae6aab204183c3b7283b53f",
     "amd64_manifest": "sha256:607745183a0ecdf3b59ae0ff39d4a64703e85374eae6aab204183c3b7283b53f",
-    "ref": "v4.9.1",
+    "ref": "f6ce783aa21e6d8d4141083f969d5c0499719566",
     "context": "mariadb",
     "newrelic": "none",
-    "note": "The published v4.9.1 image is MariaDB 10.11.14 on Ubuntu 22.04: its eight base layers are the amd64 image of mariadb:10.11.14@sha256:e4ad7c5a... (docker-library/repo-info, 2025-09-02), whose arm64 image is from the same official build. Patch: FROM that index instead of the mariadb:11.5 the tag names; ee.cnf and my.cnf are byte-identical to the published layers."
+    "note": "Ref = the v4.9.1 tag. The published v4.9.1 image is MariaDB 10.11.14 on Ubuntu 22.04: its eight base layers are the amd64 image of mariadb:10.11.14@sha256:e4ad7c5a... (docker-library/repo-info, 2025-09-02), whose arm64 image is from the same official build. Patch: FROM that index instead of the mariadb:11.5 the tag names; ee.cnf and my.cnf are byte-identical to the published layers."
   }
 }

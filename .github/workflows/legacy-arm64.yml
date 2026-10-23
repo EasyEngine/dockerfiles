@@ -24,7 +24,7 @@ on:
 env:
   IMAGES: ${{ inputs.images }}
   TAG: ${{ inputs.tag }}
-  PUBLISH: ${{ inputs.publish && github.repository == 'EasyEngine/dockerfiles' }}
+  PUBLISH: ${{ inputs.publish == true && github.repository == 'EasyEngine/dockerfiles' }}
 
 jobs:
 
