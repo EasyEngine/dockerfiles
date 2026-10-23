@@ -137,7 +137,11 @@ RUN cd /tmp/postfix-* \
         \nsmtpd_tls_CApath = /etc/ssl/certs\
         \nsmtpd_tls_cert_file = /etc/ssl/postfix/server.crt\
         \nsmtpd_tls_key_file = /etc/ssl/postfix/server.key\
-    " >> /etc/postfix/main.cf
+    " >> /etc/postfix/main.cf \
+ # alias_maps defaults to hash:/etc/aliases; without the table, local delivery defers.
+ # Kept outside /etc/postfix so it also reaches sites whose config volume predates it.
+ && echo "postmaster: root" > /etc/aliases \
+ && newaliases
 
 EXPOSE 25
 
