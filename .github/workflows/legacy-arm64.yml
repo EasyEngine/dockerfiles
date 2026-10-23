@@ -16,6 +16,7 @@ on:
       tag:
         description: 'New tag for the amd64 + arm64 image; refused if it already exists on Docker Hub'
         required: true
+        default: 'v4.14.0'
       publish:
         description: 'Push to Docker Hub (otherwise a dry run into a runner-local registry)'
         type: boolean
