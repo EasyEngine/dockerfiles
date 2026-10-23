@@ -15,7 +15,7 @@ recipe() { jq -er --arg i "$img" '.[$i].'"$1" "$dir/recipes.json"; }
 fail() { echo "::error::$img: $*" >&2; exit 1; }
 
 # Host- or arch-specific server variables, excluded from the MariaDB comparison.
-VAR_EXCLUDE='hostname|pid_file|general_log_file|slow_query_log_file|log_bin_basename|log_bin_index|relay_log_basename|relay_log_index|server_uid|version_compile_machine|thread_pool_size|large_page_size'
+VAR_EXCLUDE='hostname|pid_file|general_log_file|slow_query_log_file|log_bin_basename|log_bin_index|relay_log_basename|relay_log_index|server_uid|version_compile_machine|thread_pool_size|large_page_size|wsrep_node_name'
 
 prepare() {
 	local out=$1 ref ctx nr
@@ -99,8 +99,10 @@ compare() {
 			bad=1
 		fi
 	done
-	echo "--- informational: tools"
-	diff "$a/tools" "$b/tools" || true
+	if [ -e "$a/tools" ]; then
+		echo "--- informational: tools"
+		diff "$a/tools" "$b/tools" || true
+	fi
 	if [ -e "$a/dpkg" ]; then
 		echo "--- informational: packages (amd64 $(wc -l <"$a/dpkg"), arm64 $(wc -l <"$b/dpkg"))"
 		diff "$a/dpkg" "$b/dpkg" || true
