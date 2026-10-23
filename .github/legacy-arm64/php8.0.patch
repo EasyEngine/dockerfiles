@@ -1,0 +1,31 @@
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -33,13 +33,13 @@
+ 		vim \
+ 		zip
+ 
+-RUN pecl install imagick; \
+-	pecl install memcached; \
+-	pecl install redis; \
+-	pecl install apcu; \
+-	pecl install mcrypt; \
++RUN pecl install imagick-3.8.1; \
++	pecl install memcached-3.4.0; \
++	pecl install redis-6.3.0; \
++	pecl install apcu-5.1.28; \
++	pecl install mcrypt-1.0.9; \
+ 	pecl install gmagick-2.0.6RC1; \
+-	pecl install timezonedb; \
++	pecl install timezonedb-2026.4; \
+ 	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
+ 	docker-php-ext-configure zip; \
+ 	docker-php-ext-install gd; \
+@@ -98,7 +98,7 @@
+ chown www-data:www-data /usr/local/etc/misc/msmtprc && \
+ chown www-data:www-data /etc/msmtprc
+ 
+-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
++RUN latest_build=/php_agent/archive/12.11.0.40/newrelic-php5-12.11.0.40-linux.tar.gz && \
+ curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+ export NR_INSTALL_USE_CP_NOT_LN=1 && \
+ export NR_INSTALL_SILENT=1 && \
