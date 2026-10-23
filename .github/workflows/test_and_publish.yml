@@ -112,7 +112,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v8
         with:
-          pattern: digests-${{ matrix.image }}-*
+          pattern: digests-${{ matrix.image }}-{amd64,arm64}
           path: ${{ runner.temp }}/digests
           merge-multiple: true
 
@@ -147,7 +147,7 @@ jobs:
         uses: actions/download-artifact@v8
         if: env.DRY_RUN == 'true'
         with:
-          pattern: oci-${{ matrix.image }}-*
+          pattern: oci-${{ matrix.image }}-{amd64,arm64}
           path: ${{ runner.temp }}/oci
 
       # Stand-in for the per-arch push-by-digest: copy each arch's index into a local registry, keeping its digest.
