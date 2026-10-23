@@ -14,8 +14,8 @@
     "amd64_manifest": "sha256:dc42a302e1b29627c8dee3fb604fde824bda813336b4ced46b1f8064ab446dad",
     "ref": "a528d2945d0ea4c2cc2dab241a7e34af3fc56950",
     "context": "php/7.0",
-    "newrelic": "unavailable",
-    "note": "The published v4.7.4 image (= v4.6.6, built 2023-04-21) matches a528d29 plus 'apt-get upgrade -y' and the openssl package, which its history shows and no commit has. Patch: those two, the Debian snapshot of the build date, PECL versions pinned to the amd64 ones. mcrypt-1.0.3 fails on PHP 7.0, so imagick and redis are never enabled, exactly as on amd64."
+    "newrelic": "skip",
+    "note": "The published v4.7.4 image (= v4.6.6, built 2023-04-21) matches a528d29 plus 'apt-get upgrade -y' and the openssl package, which its history shows and no commit has. Patch: those two, the Debian snapshot of the build date, PECL versions pinned to the amd64 ones. mcrypt-1.0.3 fails on PHP 7.0, so imagick and redis are never enabled, exactly as on amd64. New Relic publishes no aarch64 agent for PHP 7.x, so arm64 ships without it (maintainer decision); newrelic.ini stays, without its extension line."
   },
   "php7.2": {
     "amd64_tag": "v4.7.4",
@@ -23,8 +23,8 @@
     "amd64_manifest": "sha256:bd388833c25634a000207ea450bc4b4044c57ae722eb1fa24d3a550ada4f5d8a",
     "ref": "7b74e928e21b6825c1c1e290918b324bdffb3a5a",
     "context": "php/7.2",
-    "newrelic": "unavailable",
-    "note": "The published v4.7.4 image (built 2024-10-09) matches 7b74e92 (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.2, so imagick and mcrypt are never enabled, exactly as on amd64."
+    "newrelic": "skip",
+    "note": "The published v4.7.4 image (built 2024-10-09) matches 7b74e92 (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.2, so imagick and mcrypt are never enabled, exactly as on amd64. New Relic publishes no aarch64 agent for PHP 7.x, so arm64 ships without it (maintainer decision); newrelic.ini stays, without its extension line."
   },
   "php7.3": {
     "amd64_tag": "v4.7.4",
@@ -32,8 +32,8 @@
     "amd64_manifest": "sha256:e85e80a6392cec7d9dd9e9c68985d9e461ba70211d532bd7b009990f59081d4b",
     "ref": "2807ccb3a6d371835488c950ec9164388a4d2c92",
     "context": "php/7.3",
-    "newrelic": "unavailable",
-    "note": "The published v4.7.4 image (built 2024-10-09) matches 2807ccb (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.3, so imagick, mcrypt, timezonedb and apcu are never enabled, exactly as on amd64."
+    "newrelic": "skip",
+    "note": "The published v4.7.4 image (built 2024-10-09) matches 2807ccb (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.3, so imagick, mcrypt, timezonedb and apcu are never enabled, exactly as on amd64. New Relic publishes no aarch64 agent for PHP 7.x, so arm64 ships without it (maintainer decision); newrelic.ini stays, without its extension line."
   },
   "php7.4": {
     "amd64_tag": "v4.13.0",
@@ -41,8 +41,8 @@
     "amd64_manifest": "sha256:84463e410c19a1b5523dc7ee547042311f53d884ba30353228c47b8fef4b7905",
     "ref": "7fa7f03ff62d9cd2ed55946223cbc1082a7d5cc5",
     "context": "php/7.4",
-    "newrelic": "unavailable",
-    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions pinned to the amd64 ones."
+    "newrelic": "skip",
+    "note": "Built from the v4.13.0 tag (7fa7f03). Patch: PECL versions pinned to the amd64 ones. New Relic publishes no aarch64 agent for PHP 7.x, so arm64 ships without it (maintainer decision); newrelic.ini stays, without its extension line."
   },
   "php8.0": {
     "amd64_tag": "v4.13.0",
