@@ -1,37 +1,35 @@
 --- a/Dockerfile
 +++ b/Dockerfile
-@@ -1,14 +1,29 @@
+@@ -1,5 +1,16 @@
  FROM php:7.0-fpm@sha256:8e8644c0fd61424939fff072ca617469550bbb659158301a2dcadf334746a1c2
  
 +# Frozen base: its Debian suites are only on snapshot.debian.org now and stretch's archive keys have expired.
-+# The release files are pinned to the copies verified against those keys as of the amd64 build date; apt checks
-+# every index and package against them.
-+RUN set -e; cd /tmp; s=http://snapshot.debian.org/archive; \
-+	curl -fsSLo r1 $s/debian/20230421T000000Z/dists/stretch/Release; \
-+	curl -fsSLo r2 $s/debian/20230421T000000Z/dists/stretch-updates/InRelease; \
-+	curl -fsSLo r3 $s/debian-security/20230421T000000Z/dists/stretch/updates/InRelease; \
++# /etc/apt/snapshot.sha256 pins the release files to the copies verified against those keys as of the amd64 build
++# date; the next RUN checks what apt fetched against it, and apt checks every index and package against those files.
++RUN set -e; l=snapshot.debian.org_archive; \
 +	printf '%s  %s\n' \
-+		fe55c42941dd43102b9490af1678e7962ea1e257ccb8f942b43770475c336eb3 r1 \
-+		35b3294728144de605c0192e533ca97de6b77112b52d565566ab5ce7ef432a2c r2 \
-+		cb3eb154bf0311d53c98eab79692e55aae49a4bcf13c23bd12943a4fb5a0b05f r3 | sha256sum -c -; \
-+	rm r1 r2 r3; \
++		fe55c42941dd43102b9490af1678e7962ea1e257ccb8f942b43770475c336eb3 ${l}_debian_20230421T000000Z_dists_stretch_Release \
++		35b3294728144de605c0192e533ca97de6b77112b52d565566ab5ce7ef432a2c ${l}_debian_20230421T000000Z_dists_stretch-updates_Release \
++		cb3eb154bf0311d53c98eab79692e55aae49a4bcf13c23bd12943a4fb5a0b05f ${l}_debian-security_20230421T000000Z_dists_stretch_updates_Release \
++		> /etc/apt/snapshot.sha256; \
 +	sed -i -E 's#^deb http://(deb|security)\.debian\.org/(debian-security|debian) #deb [trusted=yes] http://snapshot.debian.org/archive/\2/20230421T000000Z #' /etc/apt/sources.list
 +
  LABEL maintainer="Devarshi Sathiya <devarshisathiya5@gmail.com>, Riddhesh Sanghvi <riddhesh237@gmail.com>"
  LABEL org.label-schema.schema-version="1.0.0-rc1"
  LABEL org.label-schema.vendor="EasyEngine"
- LABEL org.label-schema.name="php"
+@@ -7,8 +18,11 @@
  
  RUN set -ex; \
--	apt-get update; \
-+	apt-get update && apt-get upgrade -y; \
+ 	apt-get update; \
++	(cd /var/lib/apt/lists && sha256sum -c /etc/apt/snapshot.sha256); \
++	apt-get upgrade -y; \
  	apt-get install -y --no-install-recommends \
  		imagemagick \
 +		openssl \
  		less \
  		mariadb-client msmtp \
  		libc-client-dev \
-@@ -29,10 +44,10 @@
+@@ -29,10 +43,10 @@
  		vim \
  		zip
  

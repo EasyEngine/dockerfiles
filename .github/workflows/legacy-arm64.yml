@@ -46,12 +46,12 @@ jobs:
             echo "::error::publishing is only possible in EasyEngine/dockerfiles"; exit 1
           fi
           [[ "$TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag: $TAG"; exit 1; }
-          images=$(jq -cn --arg s "$IMAGES" '$s | split(" ") | map(select(. != "")) | unique')
-          unknown=$(jq -r --argjson want "$images" '$want - keys | join(" ")' .github/legacy-arm64/recipes.json)
+          list=$(jq -cn --arg s "$IMAGES" '$s | split(" ") | map(select(. != "")) | unique')
+          unknown=$(jq -r --argjson want "$list" '$want - keys | join(" ")' .github/legacy-arm64/recipes.json)
           [ -z "$unknown" ] || { echo "::error::no recipe for: $unknown"; exit 1; }
-          [ "$images" != "[]" ] || { echo "::error::no images given"; exit 1; }
-          echo "images=$images" >> "$GITHUB_OUTPUT"
-          echo "Images: $images, tag: $TAG, publish: $PUBLISH"
+          [ "$list" != "[]" ] || { echo "::error::no images given"; exit 1; }
+          echo "images=$list" >> "$GITHUB_OUTPUT"
+          echo "Images: $list, tag: $TAG, publish: $PUBLISH"
 
   reference: #------------------------------------------------------------------
 
@@ -93,6 +93,10 @@ jobs:
     needs: [setup, reference]
     runs-on: ubuntu-24.04-arm
     name: Build ${{ matrix.image }} (arm64)
+    # Runs for the same image and tag wait for each other, so the later one sees the earlier tag and refuses.
+    concurrency:
+      group: legacy-arm64-${{ matrix.image }}-${{ inputs.tag }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
