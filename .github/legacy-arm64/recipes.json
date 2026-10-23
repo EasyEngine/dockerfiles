@@ -1,0 +1,65 @@
+{
+  "php5.6": {
+    "amd64_tag": "v4.7.4",
+    "amd64_digest": "sha256:0d02a5f8d255a49f6f3207cf481795d0666995817784f8dfd6e29b92fc21508c",
+    "amd64_manifest": "sha256:0d02a5f8d255a49f6f3207cf481795d0666995817784f8dfd6e29b92fc21508c",
+    "ref": "681d01ac6c44ae7d9133e4f6e6606b34b44e2931",
+    "context": "php/5.6",
+    "newrelic": "none",
+    "note": "The published v4.7.4 image matches 681d01a, not the v4.7.4 tree (no tmux, no usermod). Patch: Debian snapshot of the amd64 build date (2023-02-20), imagick pinned to the amd64 version. mcrypt-1.0.1 and redis fail on PHP 5.6 and imagick is never enabled, exactly as on amd64."
+  },
+  "php7.0": {
+    "amd64_tag": "v4.7.4",
+    "amd64_digest": "sha256:dc42a302e1b29627c8dee3fb604fde824bda813336b4ced46b1f8064ab446dad",
+    "amd64_manifest": "sha256:dc42a302e1b29627c8dee3fb604fde824bda813336b4ced46b1f8064ab446dad",
+    "ref": "a528d2945d0ea4c2cc2dab241a7e34af3fc56950",
+    "context": "php/7.0",
+    "newrelic": "unavailable",
+    "note": "The published v4.7.4 image (= v4.6.6, built 2023-04-21) matches a528d29 plus 'apt-get upgrade -y' and the openssl package, which its history shows and no commit has. Patch: those two, the Debian snapshot of the build date, PECL versions pinned to the amd64 ones. mcrypt-1.0.3 fails on PHP 7.0, so imagick and redis are never enabled, exactly as on amd64."
+  },
+  "php7.2": {
+    "amd64_tag": "v4.7.4",
+    "amd64_digest": "sha256:bd388833c25634a000207ea450bc4b4044c57ae722eb1fa24d3a550ada4f5d8a",
+    "amd64_manifest": "sha256:bd388833c25634a000207ea450bc4b4044c57ae722eb1fa24d3a550ada4f5d8a",
+    "ref": "7b74e928e21b6825c1c1e290918b324bdffb3a5a",
+    "context": "php/7.2",
+    "newrelic": "unavailable",
+    "note": "The published v4.7.4 image (built 2024-10-09) matches 7b74e92 (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.2, so imagick and mcrypt are never enabled, exactly as on amd64."
+  },
+  "php7.3": {
+    "amd64_tag": "v4.7.4",
+    "amd64_digest": "sha256:e85e80a6392cec7d9dd9e9c68985d9e461ba70211d532bd7b009990f59081d4b",
+    "amd64_manifest": "sha256:e85e80a6392cec7d9dd9e9c68985d9e461ba70211d532bd7b009990f59081d4b",
+    "ref": "2807ccb3a6d371835488c950ec9164388a4d2c92",
+    "context": "php/7.3",
+    "newrelic": "unavailable",
+    "note": "The published v4.7.4 image (built 2024-10-09) matches 2807ccb (no WebP, no tmux). Patch: Debian snapshot of the build date, PECL versions pinned to the amd64 ones. redis fails on PHP 7.3, so imagick, mcrypt, timezonedb and apcu are never enabled, exactly as on amd64."
+  },
+  "php7.4": {
+    "amd64_tag": "v4.13.0",
+    "amd64_digest": "sha256:f1a007ff60dd2a831449d8ac7795cc6381577ae887b8f316f3d2c37fabb5261f",
+    "amd64_manifest": "sha256:84463e410c19a1b5523dc7ee547042311f53d884ba30353228c47b8fef4b7905",
+    "ref": "v4.13.0",
+    "context": "php/7.4",
+    "newrelic": "unavailable",
+    "note": "Built from the v4.13.0 tree. Patch: PECL versions pinned to the amd64 ones."
+  },
+  "php8.0": {
+    "amd64_tag": "v4.13.0",
+    "amd64_digest": "sha256:8a4848e0e574558dbc3eb7e0f7505d6e93a7d7a341d82120062a8547e1514f5b",
+    "amd64_manifest": "sha256:b7da1852dc8820982f61d249cdb4fd6ae124cec9c0f0f4f4435f49670b5c7f90",
+    "ref": "v4.13.0",
+    "context": "php/8.0",
+    "newrelic": "agent",
+    "note": "Built from the v4.13.0 tree. Patch: PECL versions and the New Relic agent (12.11.0.40) pinned to the amd64 ones."
+  },
+  "mariadb": {
+    "amd64_tag": "v4.9.1",
+    "amd64_digest": "sha256:607745183a0ecdf3b59ae0ff39d4a64703e85374eae6aab204183c3b7283b53f",
+    "amd64_manifest": "sha256:607745183a0ecdf3b59ae0ff39d4a64703e85374eae6aab204183c3b7283b53f",
+    "ref": "v4.9.1",
+    "context": "mariadb",
+    "newrelic": "none",
+    "note": "The published v4.9.1 image is MariaDB 10.11.14 on Ubuntu 22.04: its eight base layers are the amd64 image of mariadb:10.11.14@sha256:e4ad7c5a... (docker-library/repo-info, 2025-09-02), whose arm64 image is from the same official build. Patch: FROM that index instead of the mariadb:11.5 the tag names; ee.cnf and my.cnf are byte-identical to the published layers."
+  }
+}

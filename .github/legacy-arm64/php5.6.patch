@@ -1,0 +1,20 @@
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,5 +1,8 @@
+ FROM php:5.6-fpm
+ 
++# Frozen base: its Debian suites are only on snapshot.debian.org now; use the snapshot from the amd64 build date.
++RUN sed -i -E 's#^deb http://(deb|security)\.debian\.org/(debian-security|debian) #deb [check-valid-until=no] http://snapshot.debian.org/archive/\2/20230220T000000Z #' /etc/apt/sources.list
++
+ LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
+ LABEL org.label-schema.schema-version="1.0.0-rc1"
+ LABEL org.label-schema.vendor="EasyEngine"
+@@ -27,7 +30,7 @@
+ 		vim \
+ 		zip
+ 
+-RUN pecl install imagick memcached-2.2.0; \
++RUN pecl install imagick-3.7.0 memcached-2.2.0; \
+ 	printf "\n" | pecl install mcrypt-1.0.1; \
+ 	printf "\n" | pecl install redis; \
+ 	docker-php-ext-configure gd --with-png-dir=/usr --with-jpeg-dir=/usr; \
