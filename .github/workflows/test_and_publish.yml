@@ -54,6 +54,8 @@ jobs:
         with:
           context: php/${{ matrix.php }}
           tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push PHP - ${{ matrix.php }} image
         uses: docker/build-push-action@v7
@@ -62,6 +64,8 @@ jobs:
           context: php/${{ matrix.php }}
           push: true
           tags: easyengine/php${{ steps.img-tag.outputs.tag }}:${{ steps.tag.outputs.tag }}
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
   other-images: #----------------------------------------------------------------------
 

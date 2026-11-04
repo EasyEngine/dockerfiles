@@ -35,20 +35,41 @@ RUN curl -fsSL https://packages.sury.org/php/README.txt | bash && \
 	apt-get update && \
 	apt-get install -y libc-client-dev
 
-RUN pecl install memcached; \
-	pecl install redis; \
-	pecl install apcu; \
-	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
-	pecl install -n mcrypt; \
-	echo "yes" | pecl install imap; \
-	pecl install timezonedb; \
-    # pecl install imagick; \
+# Extensions are built with PIE from Packagist/GitHub (not pecl.php.net); docker-php-ext-enable below enables them.
+# CI passes its GITHUB_TOKEN as the optional `github_token` BuildKit secret for PIE's GitHub downloads; it never lands in a layer.
+RUN --mount=type=secret,id=github_token \
+	set -eu; \
+	if [ -s /run/secrets/github_token ]; then \
+		COMPOSER_AUTH="{\"github-oauth\":{\"github.com\":\"$(cat /run/secrets/github_token)\"}}"; \
+		export COMPOSER_AUTH; \
+	fi; \
+	set -x; \
+	curl -fsSL -o /usr/local/bin/pie https://github.com/php/pie/releases/download/1.5.2/pie.phar; \
+	echo "fe70c59738cf56ec00a818cf9cb9593da171aac86f5f1f859995b8839dfd2cc7  /usr/local/bin/pie" | sha256sum -c -; \
+	chmod +x /usr/local/bin/pie; \
+	pie install --no-interaction --skip-enable-extension imagick/imagick:3.8.1; \
+	pie install --no-interaction --skip-enable-extension php-memcached/php-memcached:3.4.0; \
+	pie install --no-interaction --skip-enable-extension phpredis/phpredis:6.3.0; \
+	pie install --no-interaction --skip-enable-extension apcu/apcu:5.1.28; \
+	pie install --no-interaction --skip-enable-extension pecl/mcrypt:1.0.9; \
+	# timezonedb stays unpinned: it only exists to ship newer tz data than PHP bundles, so it takes the latest release
+	pie install --no-interaction --skip-enable-extension pecl/timezonedb; \
+	# Record the exact commits PIE installed in the build log
+	php -r 'foreach (glob("/root/.pie/*/pie.lock") as $f) foreach (json_decode(file_get_contents($f), true)["packages"] as $p) echo "PIE installed ", $p["name"], " ", $p["version"], " ", $p["dist"]["reference"] ?? $p["source"]["reference"] ?? "?", "\n";'; \
+	rm -rf /usr/local/bin/pie /root/.pie /root/.composer; \
+	# imap isn't on Packagist: build the source of its pecl 1.0.3 release
+	mkdir /tmp/imap; \
+	curl -fsSL -o /tmp/imap.tar.gz https://github.com/php/pecl-mail-imap/archive/refs/tags/1.0.3.tar.gz; \
+	echo "529383529b799f7cdefc7fadde028f9ac420bab7b4cb40bbc915ff11fceac18c  /tmp/imap.tar.gz" | sha256sum -c -; \
+	tar -xzf /tmp/imap.tar.gz -C /tmp/imap --strip-components=1; \
+	( cd /tmp/imap && phpize && ./configure --with-imap --with-kerberos --with-imap-ssl && make -j"$(nproc)" && make install ); \
+	rm -rf /tmp/imap /tmp/imap.tar.gz; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
 	docker-php-ext-install mysqli; \
 	docker-php-ext-install pdo_mysql; \
-	docker-php-ext-install opcache; \
+	# opcache is built into PHP 8.5, so docker-php-ext-install opcache would fail
 	docker-php-ext-install soap; \
 	docker-php-ext-install intl; \
 	docker-php-ext-install zip; \
@@ -65,29 +86,11 @@ RUN pecl install memcached; \
 	docker-php-ext-enable redis; \
 	docker-php-ext-enable timezonedb; \
 	docker-php-ext-enable apcu; \
-	# docker-php-ext-enable imagick; \
+	docker-php-ext-enable imagick; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=imap.so" > /usr/local/etc/php/conf.d/imap.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
-
-# Temp workaround for imagick
-RUN apt update && apt install -y git --no-install-recommends && \
-    git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
-    cd /tmp/imagick && \
-    git fetch origin master && \
-    git switch master && \
-    cd /tmp/imagick && \
-    phpize && \
-    ./configure && \
-    make && \
-    make install && \
-    docker-php-ext-enable imagick && \
-    apt remove -y git && \
-    apt autoremove -y && \
-    apt clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
@@ -105,9 +108,8 @@ RUN curl -sSL "https://getcomposer.org/installer" | php \
 		&& mv composer.phar /usr/local/bin/composer
 
 # Install wp-cli
-RUN curl -O "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
-		&& chmod +x wp-cli.phar \
-		&& mv wp-cli.phar /usr/local/bin/wp
+RUN curl -fsSLo /usr/local/bin/wp "https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar" \
+		&& chmod +x /usr/local/bin/wp
 
 # Setup a config file
 RUN mkdir -p /etc/wp-cli
@@ -143,6 +145,25 @@ COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
 #COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
 #COPY newrelic.ini /data/newrelic.ini
+
+# Fail the build on a PHP startup warning or error, a broken php-fpm config, wp or composer, or a missing module.
+# The list is the previous image's full `php -m`, so it also catches a module dropped from PHP itself.
+RUN set -eu; \
+	out="$(php -v 2>&1 && php -m 2>&1)"; \
+	if printf '%s\n' "$out" | grep -qiE 'warning|error|notice|unable to'; then \
+		echo "Build check failed: PHP printed these startup warnings or errors:" >&2; \
+		printf '%s\n' "$out" | grep -iE 'warning|error|notice|unable to' >&2; \
+		exit 1; \
+	fi; \
+	php-fpm -t; \
+	wp --allow-root --version; \
+	COMPOSER_ALLOW_SUPERUSER=1 composer --version; \
+	modules="$(php -m | tr '[:upper:] ' '[:lower:]_')"; \
+	for m in apcu bcmath calendar core ctype curl date dom exif fileinfo filter gd gmp hash iconv imagick imap intl json lexbor libxml mbstring mcrypt memcached mysqli mysqlnd openssl pcntl pcre pdo pdo_mysql pdo_sqlite phar posix random readline redis reflection session shmop simplexml soap sockets sodium spl sqlite3 standard sysvsem sysvshm timezonedb tokenizer uri xml xmlreader xmlwriter zend_opcache zip zlib; do \
+		printf '%s\n' "$modules" | grep -qx "$m" || { echo "Build check failed: PHP module $m is missing" >&2; exit 1; }; \
+	done; \
+	# The checks above leave root-owned logs that www-data couldn't write at runtime; don't ship them
+	rm -f /var/log/php/access.log /var/log/php/error.log
 
 WORKDIR /var/www/htdocs
 RUN usermod -s /bin/bash www-data
