@@ -22,6 +22,18 @@
 
 {{ end }}
 
+{{ define "acl" }}
+	{{ $aclKey := . }}
+	{{ if hasPrefix "*." . }}
+		{{ $aclKey = printf "_wildcard.%s" (trimPrefix "*." .) }}
+	{{ end }}
+	{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $aclKey)) }}
+		include {{ printf "/etc/nginx/vhost.d/%s_acl" $aclKey }};
+	{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
+		include /etc/nginx/vhost.d/default_acl;
+	{{ end }}
+{{ end }}
+
 {{ define "location" }}
 	location {{ .Path }} {
 	{{ if eq .Proto "uwsgi" }}
@@ -35,117 +47,27 @@
 		proxy_pass {{ trim .Proto }}://{{ trim .Upstream }}/;
 	{{ end }}
 
+	{{/* _wildcard.X only covers the literal *.X host; X itself uses its exact file. */}}
+	{{ $authFile := "" }}
+	{{ $realm := printf "Restricted %s" .Host }}
 	{{ if eq .Path "/ee-admin/mailhog/" }}
-		{{ if (exists (printf "/etc/nginx/htpasswd/default_admin_tools")) }}
-		auth_basic      "Restricted {{ .Host }} Mailhog";
-		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/default_admin_tools") }};
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+		{{ $realm = printf "%s Mailhog" $realm }}
+		{{ if (exists "/etc/nginx/htpasswd/default_admin_tools") }}
+			{{ $authFile = "/etc/nginx/htpasswd/default_admin_tools" }}
 		{{ else if (exists "/etc/nginx/htpasswd/default") }}
-		auth_basic      "Restricted {{ .Host }} Mailhog";
-		auth_basic_user_file    /etc/nginx/htpasswd/default;
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+			{{ $authFile = "/etc/nginx/htpasswd/default" }}
 		{{ end }}
 	{{ else if (exists (printf "/etc/nginx/htpasswd/%s" .Host)) }}
-		auth_basic      "Restricted {{ .Host }}";
-		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/%s" .Host) }};
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
-	{{/*
-		Wildcard htpasswd support for WordPress Multisite.
-		Naming convention: _wildcard.domain.com applies to domain.com AND *.domain.com
-		Supports multi-level TLDs: _wildcard.domain.co.in works for domain.co.in AND *.domain.co.in
-
-		Lookup order (after exact match check on line 56):
-		- For 4+ part domains: checks _wildcard.{last-3-parts}, then _wildcard.{last-2-parts}, then default
-		- For 2-3 part domains: checks _wildcard.{last-2-parts}, then falls back to default
-		- For single-part hostnames: uses default only
-
-		Note: Uses sprig's splitList and sub functions (available in docker-gen 0.7.4+)
-	*/}}
-	{{ else }}
-		{{ $hostParts := splitList "." .Host }}
-		{{ $partsLen := len $hostParts }}
-		{{/* For 4+ part domains, check last 3 parts first (e.g., _wildcard.domain.co.in for blog.domain.co.in) */}}
-		{{ if ge $partsLen 4 }}
-			{{ $idx3 := sub $partsLen 3 }}
-			{{ $idx2 := sub $partsLen 2 }}
-			{{ $idx1 := sub $partsLen 1 }}
-			{{ $baseDomain3 := printf "%s.%s.%s" (index $hostParts $idx3) (index $hostParts $idx2) (index $hostParts $idx1) }}
-			{{ $wildcardHtpasswd3 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain3 }}
-			{{ if (exists $wildcardHtpasswd3) }}
-				auth_basic      "Restricted {{ .Host }}";
-				auth_basic_user_file    {{ ($wildcardHtpasswd3) }};
-				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-					include /etc/nginx/vhost.d/default_acl;
-				{{ end }}
-			{{ else }}
-				{{/* Fallback: check last 2 parts (e.g., _wildcard.co.in for blog.domain.co.in) */}}
-				{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}
-				{{ $wildcardHtpasswd2 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain2 }}
-				{{ if (exists $wildcardHtpasswd2) }}
-					auth_basic      "Restricted {{ .Host }}";
-					auth_basic_user_file    {{ ($wildcardHtpasswd2) }};
-					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-						include /etc/nginx/vhost.d/default_acl;
-					{{ end }}
-				{{ else if (exists "/etc/nginx/htpasswd/default") }}
-					auth_basic      "Restricted {{ .Host }}";
-					auth_basic_user_file    /etc/nginx/htpasswd/default;
-					{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-						include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-					{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-						include /etc/nginx/vhost.d/default_acl;
-					{{ end }}
-				{{ end }}
-			{{ end }}
-		{{ else if ge $partsLen 2 }}
-			{{/* For 2-3 part domains, check last 2 parts (e.g., _wildcard.example.com for blog.example.com or example.com) */}}
-			{{ $idx2 := sub $partsLen 2 }}
-			{{ $idx1 := sub $partsLen 1 }}
-			{{ $baseDomain2 := printf "%s.%s" (index $hostParts $idx2) (index $hostParts $idx1) }}
-			{{ $wildcardHtpasswd2 := printf "/etc/nginx/htpasswd/_wildcard.%s" $baseDomain2 }}
-			{{ if (exists $wildcardHtpasswd2) }}
-				auth_basic      "Restricted {{ .Host }}";
-				auth_basic_user_file    {{ ($wildcardHtpasswd2) }};
-				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-					include /etc/nginx/vhost.d/default_acl;
-				{{ end }}
-			{{ else if (exists "/etc/nginx/htpasswd/default") }}
-				auth_basic      "Restricted {{ .Host }}";
-				auth_basic_user_file    /etc/nginx/htpasswd/default;
-				{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-					include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-				{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-					include /etc/nginx/vhost.d/default_acl;
-				{{ end }}
-			{{ end }}
-		{{ else if (exists "/etc/nginx/htpasswd/default") }}
-			{{/* Single-part hostname - use default */}}
-			auth_basic      "Restricted {{ .Host }}";
-			auth_basic_user_file    /etc/nginx/htpasswd/default;
-			{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" .Host)) }}
-				include {{ printf "/etc/nginx/vhost.d/%s_acl" .Host}};
-			{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-				include /etc/nginx/vhost.d/default_acl;
-			{{ end }}
-		{{ end }}
+		{{ $authFile = printf "/etc/nginx/htpasswd/%s" .Host }}
+	{{ else if (and (hasPrefix "*." .Host) (exists (printf "/etc/nginx/htpasswd/_wildcard.%s" (trimPrefix "*." .Host)))) }}
+		{{ $authFile = printf "/etc/nginx/htpasswd/_wildcard.%s" (trimPrefix "*." .Host) }}
+	{{ else if (exists "/etc/nginx/htpasswd/default") }}
+		{{ $authFile = "/etc/nginx/htpasswd/default" }}
+	{{ end }}
+	{{ if $authFile }}
+		auth_basic      "{{ $realm }}";
+		auth_basic_user_file    {{ $authFile }};
+		{{ template "acl" .Host }}
 	{{ end }}
 
 	{{ if (exists (printf "/etc/nginx/vhost.d/%s_location" .Host)) }}
@@ -479,19 +401,11 @@ server {
 			{{ if (exists (printf "/etc/nginx/htpasswd/default_admin_tools")) }}
 		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/default_admin_tools") }};
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+		{{ template "acl" $host }}
 			{{ else if (exists "/etc/nginx/htpasswd/default") }}
 		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    "/etc/nginx/htpasswd/default";
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+		{{ template "acl" $host }}
 			{{ end }}
 	}
 		{{ end }}
@@ -535,19 +449,11 @@ server {
 			{{ if (exists (printf "/etc/nginx/htpasswd/default_admin_tools")) }}
 		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    {{ (printf "/etc/nginx/htpasswd/default_admin_tools") }};
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+		{{ template "acl" $host }}
 			{{ else if (exists "/etc/nginx/htpasswd/default") }}
 		auth_basic      "Restricted {{ $host }} Admin Tools";
 		auth_basic_user_file    "/etc/nginx/htpasswd/default";
-		{{ if (exists (printf "/etc/nginx/vhost.d/%s_acl" $host)) }}
-		include {{ printf "/etc/nginx/vhost.d/%s_acl" $host}};
-		{{ else if (exists "/etc/nginx/vhost.d/default_acl") }}
-		include /etc/nginx/vhost.d/default_acl;
-		{{ end }}
+		{{ template "acl" $host }}
 			{{ end }}
 	}
 		{{ end }}
