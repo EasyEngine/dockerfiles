@@ -133,7 +133,7 @@ When a vhost is accessed via HTTPS but no matching certificate is found:
 1. **If default certificate exists:** Uses `/etc/nginx/certs/default.crt` and returns 503
 2. **If no default certificate:** Rejects the SSL/TLS handshake
 
-This prevents certificate warning dialogs in browsers and improves security by not exposing invalid certificates.
+Either way the vhost never gets another site's certificate. Without a default certificate, nginx used to answer such a request with the certificate of the first HTTPS vhost. This doesn't apply to vhosts with `HTTPS_METHOD=nohttps`: they get no HTTPS server block, so HTTPS requests for them go to the default server.
 
 ---
 
