@@ -460,7 +460,7 @@ server {
 	{{ end }}
 }
 
-{{ if (and (not $is_https) (ne $https_method "nohttps")) }}
+{{ if (not $is_https) }}
 server {
 	server_name {{ $host }};
 	listen 443 ssl {{ $default_server }};
