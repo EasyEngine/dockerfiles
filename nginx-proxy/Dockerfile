@@ -8,7 +8,9 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY version.conf /version.conf
 COPY default.html /etc/nginx/html/default.html
 
+# The upstream image isn't rebuilt between nginx-proxy releases, so apply pending Debian updates here.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install --no-install-recommends apache2-utils -y && rm -rf /var/lib/apt/lists/*
 
 RUN chmod +x /app/docker-entrypoint.sh
