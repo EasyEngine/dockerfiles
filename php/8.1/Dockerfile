@@ -5,8 +5,10 @@ LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"
 LABEL org.label-schema.name="php"
 
+# Upstream stopped rebuilding php:8.1 after its EOL, so pull in Debian security updates here.
 RUN set -ex; \
 	apt-get update; \
+	apt-get upgrade -y; \
 	apt-get install -y --no-install-recommends \
 		imagemagick \
 		less \
