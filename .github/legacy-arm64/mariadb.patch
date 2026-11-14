@@ -1,0 +1,9 @@
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,4 +1,5 @@
+-FROM mariadb:11.5
++# v4.9.1 was built from this MariaDB 10.11.14 index (docker-library/repo-info, 2025-09-02), not from the 11.5 named here.
++FROM mariadb:10.11.14@sha256:e4ad7c5ad8874c2b049cef7566ccf534856b9fcde1c3c89c3251e8fa6fd6915c
+ LABEL org.label-schema.schema-version="1.0.0"
+ LABEL org.label-schema.vendor="EasyEngine"
+ LABEL org.label-schema.name="db"

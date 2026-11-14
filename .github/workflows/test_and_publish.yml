@@ -1,7 +1,9 @@
 # #
-# # This action will publish EasyEngine docker image.
-# # This is set to publish images when tags are created,
-# # and test them by just building them on PR.
+# # This action will publish EasyEngine docker images for linux/amd64 and linux/arm64.
+# # Each arch is built and smoke-tested on a native runner; on tags the per-arch
+# # images are pushed by digest and merged into one multi-arch tag.
+# # PRs only build and test. Any other run (workflow_dispatch, tags on forks) is a
+# # dry run that publishes into a throwaway local registry instead of Docker Hub.
 # #
 
 name: Test & Publish EE docker images
@@ -10,99 +12,179 @@ on:
   push:
     tags:
       - v*
+  workflow_dispatch:
+
+env:
+  # Only v* tag pushes to the upstream repo reach Docker Hub.
+  PUBLISH: ${{ github.event_name == 'push' && github.repository == 'EasyEngine/dockerfiles' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+  DRY_RUN: ${{ github.event_name != 'pull_request' && !(github.event_name == 'push' && github.repository == 'EasyEngine/dockerfiles' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v')) }}
 
 jobs:
 
-  php: #----------------------------------------------------------------------
+  build: #----------------------------------------------------------------------
 
-    runs-on: ubuntu-latest
-    name: Build and push PHP ${{ matrix.php }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    name: Build ${{ matrix.image }} (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
+        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'newrelic-daemon']
+        arch: ['amd64', 'arm64']
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Get tag
-        id: tag
-        run: echo "tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
-
-      - name: Img tag
-        id: img-tag
+      - name: Build context
+        id: ctx
         run: |
-          PHP=${{ matrix.php }}
-          echo "tag=${PHP/stable/}" >> $GITHUB_OUTPUT
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v4
-        if: github.event_name != 'pull_request'
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build PHP - ${{ matrix.php }} image
-        uses: docker/build-push-action@v7
-        if: github.event_name == 'pull_request'
-        with:
-          context: php/${{ matrix.php }}
-          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
-
-      - name: Build and push PHP - ${{ matrix.php }} image
-        uses: docker/build-push-action@v7
-        if: github.event_name != 'pull_request'
-        with:
-          context: php/${{ matrix.php }}
-          push: true
-          tags: easyengine/php${{ steps.img-tag.outputs.tag }}:${{ steps.tag.outputs.tag }}
-
-  other-images: #----------------------------------------------------------------------
-
-    runs-on: ubuntu-latest
-    name: Build and push ${{ matrix.others }}
-    strategy:
-      fail-fast: false
-      matrix:
-        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+          IMG=${{ matrix.image }}
+          case $IMG in php*) echo "dir=php/${IMG#php}" ;; *) echo "dir=$IMG" ;; esac >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Get tag
-        id: tag
-        run: echo "tag=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
-
       - name: Login to DockerHub
         uses: docker/login-action@v4
-        if: github.event_name != 'pull_request'
+        if: env.PUBLISH == 'true'
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build ${{ matrix.others }} image
+      - name: Build ${{ matrix.image }} image
         uses: docker/build-push-action@v7
-        if: github.event_name == 'pull_request'
         with:
-          context: ${{ matrix.others }}
-          tags: easyengine/${{ matrix.others }}:test
+          context: ${{ steps.ctx.outputs.dir }}
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: easyengine/${{ matrix.image }}:test
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.others }} image
+      - name: Smoke test
+        run: .github/scripts/smoke-test.sh ${{ matrix.image }} easyengine/${{ matrix.image }}:test ${{ matrix.arch }}
+
+      # Same builder as above, so this reuses the tested layers instead of rebuilding.
+      - name: Push ${{ matrix.image }} by digest
+        id: push
         uses: docker/build-push-action@v7
-        if: github.event_name != 'pull_request'
+        if: env.PUBLISH == 'true' || env.DRY_RUN == 'true'
         with:
-          context: ${{ matrix.others }}
-          push: true
-          tags: easyengine/${{ matrix.others }}:${{ steps.tag.outputs.tag }}
+          context: ${{ steps.ctx.outputs.dir }}
+          platforms: linux/${{ matrix.arch }}
+          outputs: ${{ env.PUBLISH == 'true' && format('type=image,name=easyengine/{0},push-by-digest=true,name-canonical=true,push=true', matrix.image) || format('type=oci,tar=false,dest={0}/oci', runner.temp) }}
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Export digest
+        if: steps.push.outcome == 'success'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        if: steps.push.outcome == 'success'
+        with:
+          name: digests-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload OCI layout (dry run)
+        uses: actions/upload-artifact@v7
+        if: steps.push.outcome == 'success' && env.DRY_RUN == 'true'
+        with:
+          name: oci-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/oci
+          if-no-files-found: error
+          retention-days: 1
+
+  merge: #----------------------------------------------------------------------
+
+    # Runs per image even if other images failed, like the old independent jobs.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    name: Publish ${{ matrix.image }} manifest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['php8.1', 'php8.2', 'php8.3', 'php8.4', 'php8.5', 'nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'newrelic-daemon']
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: digests-${{ matrix.image }}-{amd64,arm64}
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Check both arches were built
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          find . -type f -printf '%f\n'
+          [ "$(find . -type f | wc -l)" -eq 2 ] || { echo "::error::expected one digest per arch; not publishing a partial image"; exit 1; }
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        if: env.PUBLISH == 'true'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image name and tag
+        id: meta
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            echo "image=easyengine/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "image=localhost:5000/easyengine/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+            echo "tag=dry-run" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download OCI layouts (dry run)
+        uses: actions/download-artifact@v8
+        if: env.DRY_RUN == 'true'
+        with:
+          pattern: oci-${{ matrix.image }}-{amd64,arm64}
+          path: ${{ runner.temp }}/oci
+
+      # Stand-in for the per-arch push-by-digest: copy each arch's index into a local registry, keeping its digest.
+      - name: Push per-arch images to a local registry (dry run)
+        if: env.DRY_RUN == 'true'
+        run: |
+          docker run -d --name registry -p 5000:5000 registry:3
+          for _ in $(seq 30); do curl -fs http://localhost:5000/v2/ >/dev/null && break; sleep 1; done
+          for d in "$RUNNER_TEMP"/oci/oci-*; do
+            docker buildx imagetools create --prefer-index=false -t "$IMAGE:${d##*-}" "oci-layout://$d"
+          done
+          for f in "$RUNNER_TEMP"/digests/*; do
+            docker buildx imagetools inspect "$IMAGE@sha256:${f##*/}" >/dev/null
+          done
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+
+      - name: Create manifest list and push
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          refs=()
+          for f in *; do refs+=("$IMAGE@sha256:$f"); done
+          docker buildx imagetools create -t "$IMAGE:$TAG" "${refs[@]}"
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}
+
+      - name: Verify platforms
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$TAG"
+          platforms=$(docker buildx imagetools inspect --raw "$IMAGE:$TAG" | jq -r '[.manifests[].platform | select(.architecture != "unknown") | .os + "/" + .architecture] | sort | join(",")')
+          echo "platforms: $platforms"
+          [ "$platforms" = "linux/amd64,linux/arm64" ] || { echo "::error::unexpected platforms: $platforms"; exit 1; }
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          TAG: ${{ steps.meta.outputs.tag }}

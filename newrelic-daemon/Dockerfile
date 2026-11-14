@@ -8,11 +8,16 @@ LABEL org.label-schema.name="newrelic-daemon"
 ENV NR_PORT=/run/newrelic/newrelic.sock
 
 RUN  set -ex; \
+    case "$(apk --print-arch)" in \
+        x86_64) nr_arch=x64 ;; \
+        aarch64) nr_arch=aarch64 ;; \
+        *) echo "unsupported arch: $(apk --print-arch)" >&2; exit 1 ;; \
+    esac; \
     apk --no-cache add curl; \
     export NR_FILE_URL="https://download.newrelic.com$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux-musl.tar.gz' | sed 's/.*"\(.*\)".*/\1/')"; \
     curl --connect-timeout 10 -o nr.tar.gz -fSL $NR_FILE_URL; \
     tar -xf nr.tar.gz; \
-    cp newrelic-php5-*/daemon/newrelic-daemon.x64 /usr/local/bin/newrelic-daemon; \
+    cp newrelic-php5-*/daemon/newrelic-daemon.${nr_arch} /usr/local/bin/newrelic-daemon; \
     mkdir -p /var/log/newrelic /run/newrelic; \
     rm -rf newrelic-php5* nr.tar.gz;
 

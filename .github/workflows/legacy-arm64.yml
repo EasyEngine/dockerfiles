@@ -1,0 +1,224 @@
+# #
+# # One-time arm64 builds of images that are no longer in the build matrix (old PHP versions, MariaDB 10.11).
+# # Each recipe in .github/legacy-arm64/recipes.json rebuilds the published amd64 image for arm64 and publishes
+# # a NEW tag whose index holds the untouched amd64 image (same digest) plus the new arm64 one.
+# # Without "publish" (or outside EasyEngine/dockerfiles) it is a dry run into a runner-local registry.
+# #
+
+name: One-time arm64 builds of legacy images
+on:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Images to build (space-separated keys of .github/legacy-arm64/recipes.json)'
+        required: true
+        default: 'php5.6 php7.0 php7.2 php7.3 php7.4 php8.0 mariadb'
+      tag:
+        description: 'New tag for the amd64 + arm64 image; refused if it already exists on Docker Hub'
+        required: true
+        default: 'v4.14.0'
+      publish:
+        description: 'Push to Docker Hub (otherwise a dry run into a runner-local registry)'
+        type: boolean
+        default: false
+
+env:
+  IMAGES: ${{ inputs.images }}
+  TAG: ${{ inputs.tag }}
+  PUBLISH: ${{ inputs.publish == true && github.repository == 'EasyEngine/dockerfiles' }}
+
+jobs:
+
+  setup: #----------------------------------------------------------------------
+
+    runs-on: ubuntu-24.04
+    outputs:
+      images: ${{ steps.check.outputs.images }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check inputs
+        id: check
+        env:
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+        run: |
+          if [ "$PUBLISH_REQUESTED" = true ] && [ "$PUBLISH" != true ]; then
+            echo "::error::publishing is only possible in EasyEngine/dockerfiles"; exit 1
+          fi
+          [[ "$TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "::error::invalid tag: $TAG"; exit 1; }
+          list=$(jq -cn --arg s "$IMAGES" '$s | split(" ") | map(select(. != "")) | unique')
+          unknown=$(jq -r --argjson want "$list" '$want - keys | join(" ")' .github/legacy-arm64/recipes.json)
+          [ -z "$unknown" ] || { echo "::error::no recipe for: $unknown"; exit 1; }
+          [ "$list" != "[]" ] || { echo "::error::no images given"; exit 1; }
+          echo "images=$list" >> "$GITHUB_OUTPUT"
+          echo "Images: $list, tag: $TAG, publish: $PUBLISH"
+
+  reference: #------------------------------------------------------------------
+
+    needs: setup
+    runs-on: ubuntu-24.04
+    name: Reference ${{ matrix.image }} (published amd64)
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.setup.outputs.images) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Pull the published amd64 image
+        id: ref
+        run: |
+          r() { jq -er --arg i "${{ matrix.image }}" ".[\$i].$1" .github/legacy-arm64/recipes.json; }
+          src="easyengine/${{ matrix.image }}@$(r amd64_digest)"
+          docker pull "$src"
+          now=sha256:$(printf '%s' "$(docker buildx imagetools inspect --raw "easyengine/${{ matrix.image }}:$(r amd64_tag)")" | sha256sum | cut -d' ' -f1)
+          [ "$now" = "$(r amd64_digest)" ] || echo "::warning::easyengine/${{ matrix.image }}:$(r amd64_tag) now points to $now; the recipe digest is used"
+          echo "src=$src" >> "$GITHUB_OUTPUT"
+
+      - name: Collect facts
+        run: .github/scripts/legacy-arm64.sh facts ${{ matrix.image }} "${{ steps.ref.outputs.src }}" "$RUNNER_TEMP/facts"
+
+      - name: Upload facts
+        uses: actions/upload-artifact@v7
+        with:
+          name: facts-${{ matrix.image }}-amd64
+          path: ${{ runner.temp }}/facts
+          retention-days: 7
+
+  build: #----------------------------------------------------------------------
+
+    # A failed reference job only fails its own image (its facts are missing).
+    if: ${{ !cancelled() && needs.setup.result == 'success' }}
+    needs: [setup, reference]
+    runs-on: ubuntu-24.04-arm
+    name: Build ${{ matrix.image }} (arm64)
+    # Runs for the same image and tag wait for each other, so the later one sees the earlier tag and refuses.
+    concurrency:
+      group: legacy-arm64-${{ matrix.image }}-${{ inputs.tag }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.setup.outputs.images) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build context from the recipe
+        run: .github/scripts/legacy-arm64.sh prepare ${{ matrix.image }} "$RUNNER_TEMP/ctx"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        if: env.PUBLISH == 'true'
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build ${{ matrix.image }} for arm64
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/ctx
+          platforms: linux/arm64
+          load: true
+          tags: local/${{ matrix.image }}:arm64
+
+      - name: Check the ELF architecture of the key binaries
+        run: .github/scripts/legacy-arm64.sh elf ${{ matrix.image }} local/${{ matrix.image }}:arm64
+
+      - name: Collect facts
+        run: .github/scripts/legacy-arm64.sh facts ${{ matrix.image }} local/${{ matrix.image }}:arm64 "$RUNNER_TEMP/facts-arm64"
+
+      - name: Download the amd64 facts
+        uses: actions/download-artifact@v8
+        with:
+          name: facts-${{ matrix.image }}-amd64
+          path: ${{ runner.temp }}/facts-amd64
+
+      - name: Compare with the published amd64 image
+        run: .github/scripts/legacy-arm64.sh compare ${{ matrix.image }} "$RUNNER_TEMP/facts-amd64" "$RUNNER_TEMP/facts-arm64"
+
+      - name: Upload arm64 facts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: facts-${{ matrix.image }}-arm64
+          path: ${{ runner.temp }}/facts-arm64
+          retention-days: 7
+
+      - name: Refuse an existing tag
+        run: .github/scripts/legacy-arm64.sh tag-free easyengine/${{ matrix.image }} "$TAG"
+
+      # Same builder as above, so this reuses the tested layers instead of rebuilding.
+      - name: Push the arm64 image by digest
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ runner.temp }}/ctx
+          platforms: linux/arm64
+          outputs: ${{ env.PUBLISH == 'true' && format('type=image,name=easyengine/{0},push-by-digest=true,name-canonical=true,push=true', matrix.image) || format('type=oci,tar=false,dest={0}/oci', runner.temp) }}
+
+      - name: Target
+        id: target
+        run: |
+          if [ "$PUBLISH" = true ]; then repo=easyengine/${{ matrix.image }}; else repo=localhost:5000/easyengine/${{ matrix.image }}; fi
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "ref=$repo:$TAG" >> "$GITHUB_OUTPUT"
+
+      # Stand-in for the push by digest: a carbon copy of the arm64 index into a local registry.
+      - name: Push the arm64 image to a local registry (dry run)
+        if: env.PUBLISH != 'true'
+        run: |
+          docker run -d --name registry -p 5000:5000 registry:3
+          for _ in $(seq 30); do curl -fs http://localhost:5000/v2/ >/dev/null && break; sleep 1; done
+          docker buildx imagetools create --prefer-index=false -t "$REPO:arm64-build" "oci-layout://$RUNNER_TEMP/oci"
+          docker buildx imagetools inspect "$REPO@$DIGEST" >/dev/null
+        env:
+          REPO: ${{ steps.target.outputs.repo }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Create the amd64 + arm64 image
+        run: |
+          .github/scripts/legacy-arm64.sh tag-free easyengine/${{ matrix.image }} "$TAG"
+          amd64=$(jq -er --arg i "${{ matrix.image }}" '.[$i].amd64_digest' .github/legacy-arm64/recipes.json)
+          docker buildx imagetools create -t "$TARGET" "docker.io/easyengine/${{ matrix.image }}@$amd64" "$REPO@$DIGEST"
+        env:
+          REPO: ${{ steps.target.outputs.repo }}
+          TARGET: ${{ steps.target.outputs.ref }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - name: Verify the new image
+        run: |
+          r() { jq -er --arg i "${{ matrix.image }}" ".[\$i].$1" .github/legacy-arm64/recipes.json; }
+          raw=$(docker buildx imagetools inspect --raw "$TARGET")
+          echo "$raw" | jq .
+          platforms=$(jq -r '[.manifests[].platform | select(.architecture != "unknown") | .os + "/" + .architecture] | sort | join(",")' <<<"$raw")
+          [ "$platforms" = "linux/amd64,linux/arm64" ] || { echo "::error::unexpected platforms: $platforms"; exit 1; }
+          amd64=$(jq -r '[.manifests[] | select(.platform.architecture == "amd64")][0].digest' <<<"$raw")
+          [ "$amd64" = "$(r amd64_manifest)" ] || { echo "::error::amd64 digest $amd64 is not the published $(r amd64_manifest)"; exit 1; }
+          arm=$(docker buildx imagetools inspect --raw "$REPO@$DIGEST")
+          want=$(jq -r 'if .manifests then [.manifests[] | select(.platform.architecture == "arm64")][0].digest else empty end' <<<"$arm")
+          [ -n "$want" ] || want=$DIGEST
+          got=$(jq -r '[.manifests[] | select(.platform.architecture == "arm64")][0].digest' <<<"$raw")
+          [ "$got" = "$want" ] || { echo "::error::arm64 digest $got is not the tested $want"; exit 1; }
+          # The pull on this arm64 runner must give the tested image, and it must behave the same.
+          docker pull "$TARGET"
+          [ "$(docker image inspect -f '{{json .RootFS.Layers}}' "$TARGET")" = "$(docker image inspect -f '{{json .RootFS.Layers}}' local/${{ matrix.image }}:arm64)" ] || { echo "::error::pulled image differs from the tested one"; exit 1; }
+          .github/scripts/legacy-arm64.sh facts ${{ matrix.image }} "$TARGET" "$RUNNER_TEMP/facts-pulled"
+          diff -r --exclude=fpm.log "$RUNNER_TEMP/facts-arm64" "$RUNNER_TEMP/facts-pulled"
+          {
+            echo "### ${{ matrix.image }} → \`$TARGET\`"
+            echo "- amd64: \`$amd64\` (published easyengine/${{ matrix.image }}:$(r amd64_tag), unchanged)"
+            echo "- arm64: \`$got\`"
+            echo "- publish: $PUBLISH"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          REPO: ${{ steps.target.outputs.repo }}
+          TARGET: ${{ steps.target.outputs.ref }}
+          DIGEST: ${{ steps.push.outputs.digest }}
