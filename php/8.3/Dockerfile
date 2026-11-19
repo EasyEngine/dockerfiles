@@ -47,6 +47,8 @@ RUN --mount=type=secret,id=github_token \
 	curl -fsSL -o /usr/local/bin/pie https://github.com/php/pie/releases/download/1.5.2/pie.phar; \
 	echo "fe70c59738cf56ec00a818cf9cb9593da171aac86f5f1f859995b8839dfd2cc7  /usr/local/bin/pie" | sha256sum -c -; \
 	chmod +x /usr/local/bin/pie; \
+	# Pin PIE's and Composer's dirs so the provenance scan and cleanup below always match.
+	export PIE_WORKING_DIRECTORY=/root/.pie COMPOSER_HOME=/root/.composer; \
 	pie install --no-interaction --skip-enable-extension imagick/imagick:3.8.1; \
 	pie install --no-interaction --skip-enable-extension php-memcached/php-memcached:3.4.0; \
 	pie install --no-interaction --skip-enable-extension phpredis/phpredis:6.3.0; \
