@@ -21,11 +21,17 @@ run() { docker run --rm --pull=never --entrypoint sh "$image" -c "$1" 2>&1; }
 if ! modules=$(docker run --rm --pull=never --entrypoint php "$image" -m 2>&1); then
 	errors+=("php -m failed: $modules")
 fi
+# Command substitution (not process substitution) so a read failure stops the
+# check, and the here-string also covers a last line without a newline.
+if ! wanted=$(sed -e 's/[[:space:]]*$//' -e '/^#/d' "$expected"); then
+	echo "::error title=PHP image check failed ($image)::cannot read $expected"
+	exit 1
+fi
 missing=()
 while IFS= read -r m; do
 	[ -z "$m" ] && continue
 	grep -Fxq -- "$m" <<<"$modules" || missing+=("$m")
-done < <(sed -e 's/[[:space:]]*$//' -e '/^#/d' "$expected")
+done <<<"$wanted"
 [ ${#missing[@]} -gt 0 ] && errors+=("missing modules: ${missing[*]}")
 
 # 2. Startup must be silent, and the FPM config must load cleanly.
