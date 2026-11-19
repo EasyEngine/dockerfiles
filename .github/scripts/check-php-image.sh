@@ -9,6 +9,12 @@ image=${1:?image}
 expected=${2:?expected modules file}
 errors=()
 
+# A missing list would otherwise check nothing and pass (e.g. a new PHP version).
+if ! grep -qv -e '^#' -e '^[[:space:]]*$' "$expected" 2>/dev/null; then
+	echo "::error title=PHP image check failed ($image)::expected modules file $expected is missing or empty"
+	exit 1
+fi
+
 run() { docker run --rm --pull=never --entrypoint sh "$image" -c "$1" 2>&1; }
 
 # 1. Expected modules (extra modules are fine).
