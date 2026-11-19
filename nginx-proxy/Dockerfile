@@ -8,10 +8,11 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY version.conf /version.conf
 COPY default.html /etc/nginx/html/default.html
 
-# nginx-proxy 1.11.6 ships nginx 1.31.3; take the nginx.org packages with the 1.31.7 security fixes
-# (same set as the official nginx image) until an upstream release does. Drop this block then.
-ENV NGINX_VERSION=1.31.8 \
-    NJS_VERSION=1.0.2
+# nginx-proxy 1.11.6 ships nginx 1.31.3; take the nginx.org 1.31.9 packages with the 1.31.7 and 2026-11-18
+# security fixes (same set as the official nginx image) until an upstream release does. Drop this block then.
+ENV NGINX_VERSION=1.31.9 \
+    NJS_VERSION=1.0.2 \
+    ACME_VERSION=0.4.2
 
 # The upstream image isn't rebuilt between nginx-proxy releases, so apply pending Debian updates here.
 RUN apt-get update \
