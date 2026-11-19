@@ -346,6 +346,35 @@ foreach ( [ 'est' => [ $full, 'full' ], 'est-php' => [ $php, 'php' ] ] as $name 
 tool_error( 'est-timeout', 'timed out after 1 s', 1, false );
 tool_error( 'badver', 'bad arguments: version must look like 8.4', 2, false );
 eq( out( 'est-nocode' ), [ 'v' => 1, 'status' => 'no_code_found', 'estimate' => true, 'site' => 'fixture.test', 'target' => '8.4', 'safe_to_upgrade' => null ], 'est-nocode: no_code_found' );
+// ------------------------------------------------- changes, access, limits
+
+tool_error( 'switch', 'the site code changed during the scan', 1 );
+$ch = out( 'changed' );
+eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed: no verdict, the unchanged file checked' );
+eq( report( 'changed' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed: a file that changed since the listing is unreadable' );
+
+$rl = out( 'rootlock' );
+eq( [ $rl['status'] ?? null, field( $rl, 'safe_to_upgrade' ), $rl['files_not_checked'] ?? null ], [ 'ok', null, 1 ], 'rootlock: an unreachable root is not no_code_found' );
+eq( report( 'rootlock' )['not_checked'] ?? null, [ [ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => './', 'reason' => 'unreadable' ] ], 'rootlock: the root is unreadable' );
+$e = out( 'est-rootlock' );
+eq( [ $e['status'] ?? null, $e['php_files'] ?? null ], [ 'ok', 1 ], 'est-rootlock: counted like the scan' );
+
+tool_error( 'reportdir', 'could not write the report', 1, false );
+eq( trim( raw( 'reportdir.outdir' ) ), './report.json', 'reportdir: no report.json.tmp left behind' );
+
+$bm  = out( 'bigmsg' );
+$msg = '';
+foreach ( comp_of( report( 'bigmsg' ), 'plugin', 'p' )['findings'] ?? [] as $f ) {
+	if ( 'PHPCompatibility.Variables.ForbiddenGlobalVariableVariable.Found' === $f['source'] ) {
+		$msg = $f['message'];
+	}
+}
+eq( [ $bm['status'] ?? null, field( $bm, 'safe_to_upgrade' ), $bm['files_not_checked'] ?? null ], [ 'ok', false, 0 ], 'bigmsg: a finding quoting more than 1 MiB of code is reported' );
+check( 0 === strpos( $msg, 'Global with variable variables' ) && 65539 === strlen( $msg ) && '…' === substr( $msg, -3 ), 'bigmsg: message cut to 64 KiB (' . strlen( $msg ) . ' bytes)' );
+
+tool_error( 'est-inf', 'bad arguments: COMPAT_SECONDS_PER_BATCH must be a finite', 2, false );
+tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1', 2, false );
+
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
 eq( trim( (string) file_get_contents( "$dir/mount" ) ), 'readonly', 'code mount is read-only inside the container' );
 

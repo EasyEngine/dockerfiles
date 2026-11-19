@@ -18,6 +18,10 @@ class LinesReport implements Report {
 
 	const FLAGS = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
 
+	// Messages can quote code of any length; the entrypoint reads lines of at most 1 MiB (LINE_MAX),
+	// and 64 KiB stays below that even when every byte is escaped as \u00XX.
+	const MESSAGE_MAX = 65536;
+
 	public function generateFileReport( array $report, File $phpcsFile, bool $showSources = false, int $width = 80 ) {
 		$count       = 0;
 		$unparseable = 0;
@@ -36,7 +40,11 @@ class LinesReport implements Report {
 		foreach ( $report['messages'] as $line => $columns ) {
 			foreach ( $columns as $column => $list ) {
 				foreach ( $list as $message ) {
-					echo json_encode( [ (int) $line, (int) $column, $message['type'], $message['source'], $message['message'] ], self::FLAGS ), "\n";
+					$text = $message['message'];
+					if ( strlen( $text ) > self::MESSAGE_MAX ) {
+						$text = substr( $text, 0, self::MESSAGE_MAX ) . '…';
+					}
+					echo json_encode( [ (int) $line, (int) $column, $message['type'], $message['source'], $text ], self::FLAGS ), "\n";
 				}
 			}
 		}

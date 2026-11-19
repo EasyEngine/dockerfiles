@@ -254,3 +254,44 @@ php_release_fixture() {
 	ln -s releases/2 "$h/current"
 	chmod -R a+rX "$app"
 }
+
+# slow_php <path>: a clean file that keeps one PHPCS run busy for about two seconds.
+slow_php() {
+	mkdir -p "$(dirname "$1")"
+	{ printf '<?php\n'; for i in $(seq 1 6000); do printf '$a%d = array( 1, 2, 3 ) + [ %d ];\n' "$i" "$i"; done; } > "$1"
+}
+
+# switch_fixture <app-dir>: a php site with htdocs/current -> releases/A; B fixes A's error and adds a new one.
+switch_fixture() {
+	local h="$1/htdocs"
+	slow_php "$h/releases/A/public/a-slow.php"
+	php_file "$h/releases/A/public/b.php" 'each( $a );'
+	slow_php "$h/releases/B/public/a-slow.php"
+	php_file "$h/releases/B/public/b.php" '$b = 1;'
+	php_file "$h/releases/B/public/c.php" 'each( $a );'
+	ln -s releases/A "$h/current"
+	chmod -R a+rX "$1"
+}
+
+# changed_fixture <app-dir>: a plugin whose second file run.sh grows while the first one is scanned.
+changed_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	slow_php "$p/a-slow.php"
+	php_file "$p/z.php" '$z = 1;'
+	chmod -R a+rX "$1"
+}
+
+# locked_root_fixture <app-dir>: a wp site whose htdocs uid 33 can't search.
+locked_root_fixture() {
+	php_file "$1/htdocs/wp-content/plugins/p/p.php" 'each( $a );'
+	chmod -R a+rX "$1"
+	chmod 0700 "$1/htdocs"
+}
+
+# bigmsg_fixture <app-dir>: a finding whose message quotes more than 1 MiB of code.
+bigmsg_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	mkdir -p "$p"
+	printf "<?php\nfunction f() {\n\tglobal \$\$x['%s'];\n}\n" "$(head -c 1100000 /dev/zero | tr '\0' a)" > "$p/big.php"
+	chmod -R a+rX "$1"
+}

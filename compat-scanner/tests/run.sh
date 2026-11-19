@@ -39,6 +39,8 @@ scan() {
 	shift 6
 	local out rc=0
 	out=$(new_out "$name")
+	# OUT_DIR_AT=report.json: a directory already there, so publishing the report fails.
+	if [ -n "${OUT_DIR_AT:-}" ]; then mkdir "$out/$OUT_DIR_AT" && chmod 0777 "$out/$OUT_DIR_AT"; fi
 	# The outer timeout keeps a hanging scan from blocking the test run.
 	# shellcheck disable=SC2046
 	timeout 900 docker run --rm --init --name "ee-php-compat-test-$name" \
@@ -56,6 +58,21 @@ scan() {
 	(cd "$out" && find . -mindepth 1 | LC_ALL=C sort) > "$RES/$name.outdir" 2>/dev/null || sudo sh -c "cd '$out' && find . -mindepth 1" > "$RES/$name.outdir"
 	echo "scan $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"
 }
+
+# during <name> <command...>: runs the command in the background while scan <name> runs its first (slow) PHPCS run.
+# /out/.work is 0700 to uid 33, so a non-root runner can only see that it exists.
+during() {
+	local name=$1
+	shift
+	(
+		for _ in $(seq 1 1200); do [ -d "$WORK/out-$name/.work" ] && break; sleep 0.05; done
+		sleep 0.5
+		"$@"
+	) &
+}
+
+switch_release() { ln -sfn releases/B "$1/htdocs/current.new" && mv -T "$1/htdocs/current.new" "$1/htdocs/current"; }
+grow_file() { echo '// more' >> "$1"; }
 
 # estimate <name> <app> <type> <path> <version> [docker args...]
 estimate() {
@@ -85,6 +102,10 @@ wpcfg_fixture "$WORK/wpcfg-dir" dir
 wpcfg_fixture "$WORK/wpcfg-parent" parent
 php_release_fixture "$WORK/php-rel" real
 php_release_fixture "$WORK/php-rel-link" link
+switch_fixture "$WORK/switch"
+changed_fixture "$WORK/changed"
+locked_root_fixture "$WORK/rootlock"
+bigmsg_fixture "$WORK/bigmsg"
 mkdir -p "$WORK/empty/htdocs" && chmod -R a+rX "$WORK/empty"
 
 before=$(tree_sum "$WORK/wp")
@@ -109,6 +130,23 @@ scan wpcfg-parent "$WORK/wpcfg-parent" wp /var/www/htdocs 8.4 600
 scan php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4 600
 estimate est-php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4
 scan php-rel-link "$WORK/php-rel-link" php /var/www/htdocs/current/public 8.4 600
+
+# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: unreadable.
+during switch switch_release "$WORK/switch"
+scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1
+wait || true
+during changed grow_file "$WORK/changed/htdocs/wp-content/plugins/p/z.php"
+scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1
+wait || true
+# A root uid 33 can't reach isn't no_code_found; a report that can't be published is a tool_error.
+scan rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4 600
+estimate est-rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4
+OUT_DIR_AT=report.json scan reportdir "$WORK/empty" wp /var/www/htdocs 8.4 600
+# A message longer than the reader's line limit is cut, not a failed scan.
+scan bigmsg "$WORK/bigmsg" wp /var/www/htdocs 8.4 600
+# Estimate settings: non-finite, and a range that doesn't contain the estimate.
+estimate est-inf "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_SECONDS_PER_BATCH=1e309
+estimate est-factors "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_LOW_FACTOR=2 -e COMPAT_HIGH_FACTOR=0.5
 
 # A kernel OOM kill of PHPCS (container limit below PHP's) is reason memory.
 scan oom "$WORK/oom" wp /var/www/htdocs 8.4 600 --memory 300m --memory-swap 300m \

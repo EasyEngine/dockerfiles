@@ -70,6 +70,8 @@ final class Scanner {
 	private $seenDirs = [];
 	/** @var array<int,array<int,bool>> Listed files by device and inode. */
 	private $seenFiles = [];
+	/** @var array<string,string|false> Real paths of the site path and content root when listed. */
+	private $pins = [];
 	/** @var int */
 	private $ticks = 0;
 
@@ -137,6 +139,7 @@ final class Scanner {
 	 * both from there and through another path belongs to the component.
 	 */
 	private function listFiles(): void {
+		$this->pins[ $this->cfg['path'] ] = @realpath( $this->cfg['path'] );
 		if ( 'php' === $this->cfg['site_type'] ) {
 			$root = MOUNT_ROOT . '/htdocs';
 			if ( ! $this->enterRoot( $root ) ) {
@@ -267,9 +270,14 @@ final class Scanner {
 	private function enterRoot( string $root ): bool {
 		$real = @realpath( $root );
 		if ( false === $real || ! is_dir( $real ) || ! $this->inside( $real ) ) {
+			// A root uid 33 can't reach (EACCES on the way) may hold code: not no_code_found.
+			if ( false === $real && function_exists( 'posix_access' ) && ! @posix_access( $root ) && 13 === posix_get_last_error() ) {
+				$this->notChecked( $this->comp( 'other', '', null, $root ), './', 'unreadable' );
+			}
 			return false;
 		}
-		$this->contentReal = $real;
+		$this->pins[ $root ] = $real;
+		$this->contentReal   = $real;
 		$this->markDir( $real );
 		return true;
 	}
@@ -781,7 +789,9 @@ final class Scanner {
 	private function scan(): array {
 		rewind( $this->listFh );
 		$batch = [];
+		$read  = 0;
 		while ( null !== ( $rec = $this->nextFile() ) ) {
+			$read++;
 			$batch[] = $rec;
 			if ( count( $batch ) >= $this->cfg['batch_size'] ) {
 				$this->runBatch( $batch );
@@ -793,6 +803,10 @@ final class Scanner {
 		}
 		fclose( $this->listFh );
 		$this->listFh = null;
+		if ( $read !== $this->listedFiles ) {
+			throw new ToolError( 'could not read the file list' );
+		}
+		$this->checkPins();
 
 		return $this->finish();
 	}
@@ -800,12 +814,15 @@ final class Scanner {
 	/** @return array{comp:int,size:int,path:string}|null */
 	private function nextFile(): ?array {
 		$head = fread( $this->listFh, 16 );
-		if ( false === $head || '' === $head ) {
+		if ( '' === $head && feof( $this->listFh ) ) {
 			return null;
+		}
+		if ( false === $head || 16 !== strlen( $head ) ) {
+			throw new ToolError( 'could not read the file list' );
 		}
 		$h   = unpack( 'Vcomp/Psize/Vlen', $head );
 		$rel = $h['len'] > 0 ? fread( $this->listFh, $h['len'] ) : '';
-		if ( 16 !== strlen( $head ) || strlen( (string) $rel ) !== $h['len'] || ! isset( $this->comps[ $h['comp'] ] ) ) {
+		if ( false === $rel || strlen( $rel ) !== $h['len'] || ! isset( $this->comps[ $h['comp'] ] ) ) {
 			throw new ToolError( 'could not read the file list' );
 		}
 		return [ 'comp' => $h['comp'], 'size' => $h['size'], 'path' => $this->comps[ $h['comp'] ]['base'] . '/' . $rel ];
@@ -816,11 +833,12 @@ final class Scanner {
 	 * Files are recorded in list order, so findings stay sorted by file.
 	 */
 	private function runBatch( array $batch ): void {
+		$this->checkPins();
 		$plain = [];
 		foreach ( $batch as $k => $f ) {
 			$real = $this->resolve( $f['path'] );
 			$st   = null === $real ? false : @stat( $real );
-			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
+			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) || $st['size'] !== $f['size'] ) {
 				$batch[ $k ]['real'] = null; // Gone or changed since the listing.
 				continue;
 			}
@@ -917,6 +935,16 @@ final class Scanner {
 		// arrives as 9 rather than 137; the deadline was ruled out above.
 		$reason = null !== $last && in_array( $last['rc'], [ 9, 137, 255 ], true ) ? 'memory' : 'error';
 		$this->spoolNotChecked( $f['comp'], $this->rel( $f['comp'], $f['path'] ), $reason );
+	}
+
+	/** A deploy that re-points `current` (or the content root) mid-scan would mix releases: no verdict then. */
+	private function checkPins(): void {
+		clearstatcache( true );
+		foreach ( $this->pins as $path => $real ) {
+			if ( @realpath( $path ) !== $real ) {
+				throw new ToolError( 'the site code changed during the scan' );
+			}
+		}
 	}
 
 	private function timedOutAt( string $path ): TimedOut {
@@ -1170,7 +1198,8 @@ final class Scanner {
 		@unlink( $report );
 
 		$cmd = [
-			'timeout', '-s', 'KILL', (string) max( 1, (int) ceil( $left ) ),
+			// The exact time left (busybox takes fractions), so no run finishes past the deadline.
+			'timeout', '-s', 'KILL', sprintf( '%.3F', ceil( $left * 1000 ) / 1000 ),
 			PHP_BINARY, '-d', 'memory_limit=' . $memory, '-d', 'display_errors=stderr', '-d', 'log_errors=0',
 			PHPCS_BIN,
 			'--standard=' . ( 'php' === $this->cfg['site_type'] ? 'PHPCompatibility' : 'PHPCompatibilityWP' ),
@@ -1608,8 +1637,8 @@ function env_float( string $name, float $default ): float {
 	if ( false === $v || '' === $v ) {
 		return $default;
 	}
-	if ( ! is_numeric( $v ) || (float) $v < 0 ) {
-		throw new BadArgs( "$name must be a non-negative number" );
+	if ( ! is_numeric( $v ) || ! is_finite( (float) $v ) || (float) $v < 0 ) {
+		throw new BadArgs( "$name must be a finite non-negative number" );
 	}
 	return (float) $v;
 }
@@ -1662,18 +1691,26 @@ function parse_args( array $argv, array &$cfg ): void {
 	$cfg['low_factor']        = env_float( 'COMPAT_LOW_FACTOR', 0.8 );
 	$cfg['high_factor']       = env_float( 'COMPAT_HIGH_FACTOR', 1.5 );
 	$cfg['report_max']        = env_int( 'COMPAT_REPORT_MAX', REPORT_MAX, 1024 );
+	if ( $cfg['low_factor'] > 1 || $cfg['high_factor'] < 1 ) {
+		throw new BadArgs( 'COMPAT_LOW_FACTOR must be at most 1 and COMPAT_HIGH_FACTOR at least 1' );
+	}
 }
 
 function emit( array $doc, int $code, bool $report ): void {
 	global $emitted;
 	$emitted = true;
 	$json    = json_encode( $doc, JSON_FLAGS ) . "\n";
-	if ( $report && is_dir( OUT_DIR ) && is_writable( OUT_DIR ) ) {
+	if ( $report ) {
 		$tmp = OUT_DIR . '/report.json.tmp';
-		if ( strlen( $json ) === @file_put_contents( $tmp, $json ) ) {
-			@rename( $tmp, OUT_DIR . '/report.json' );
-		} else {
+		if ( ! ( is_dir( OUT_DIR ) && is_writable( OUT_DIR ) && strlen( $json ) === @file_put_contents( $tmp, $json ) && @rename( $tmp, OUT_DIR . '/report.json' ) ) ) {
 			@unlink( $tmp );
+			// The report is part of the result: without it only a tool_error stands.
+			if ( 'tool_error' !== $doc['status'] ) {
+				$doc['status'] = 'tool_error';
+				$doc['detail'] = 'could not write the report';
+				$json          = json_encode( $doc, JSON_FLAGS ) . "\n";
+				$code          = 1;
+			}
 		}
 	}
 	fwrite( STDOUT, $json );
