@@ -34,8 +34,8 @@ fi
 
 # 3. Every extension= / zend_extension= line in the scanned ini dir must resolve to a file.
 dangling=$(run '
-	ext_dir=$(php -r "echo ini_get(\"extension_dir\");")
-	ini_dir=$(php -r "echo PHP_CONFIG_FILE_SCAN_DIR;")
+	ext_dir=$(php -r "echo ini_get(\"extension_dir\");" 2>/dev/null)
+	ini_dir=$(php -r "echo PHP_CONFIG_FILE_SCAN_DIR;" 2>/dev/null)
 	for f in "$ini_dir"/*.ini; do
 		[ -f "$f" ] || continue
 		sed -n "s/^[[:space:]]*\(zend_\)\{0,1\}extension[[:space:]]*=[[:space:]]*\"\{0,1\}\([^\";[:space:]]*\).*/\2/p" "$f" |
