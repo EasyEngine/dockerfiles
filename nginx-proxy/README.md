@@ -115,6 +115,28 @@ deny all;
 
 ---
 
+## SSL Certificate Handling
+
+### Certificate Lookup
+
+The proxy automatically detects SSL certificates from `/etc/nginx/certs/`:
+
+```bash
+/etc/nginx/certs/example.com.crt
+/etc/nginx/certs/example.com.key
+```
+
+### Fallback Certificate Behavior
+
+When a vhost is accessed via HTTPS but no matching certificate is found:
+
+1. **If default certificate exists:** Uses `/etc/nginx/certs/default.crt` and returns 503
+2. **If no default certificate:** Rejects the SSL/TLS handshake
+
+Either way the vhost never gets another site's certificate. Without a default certificate, nginx used to answer such a request with the certificate of the first HTTPS vhost.
+
+---
+
 ## Environment Variables
 
 | Variable | Description | Default |
