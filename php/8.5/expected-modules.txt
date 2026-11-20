@@ -24,6 +24,7 @@ mcrypt
 memcached
 mysqli
 mysqlnd
+newrelic
 openssl
 pcntl
 pcre
