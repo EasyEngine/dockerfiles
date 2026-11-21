@@ -74,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
+        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon', 'compat-scanner']
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -101,7 +101,12 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           context: ${{ matrix.others }}
+          load: ${{ matrix.others == 'compat-scanner' }}
           tags: easyengine/${{ matrix.others }}:test
+
+      - name: Test compat-scanner image
+        if: github.event_name == 'pull_request' && matrix.others == 'compat-scanner'
+        run: bash compat-scanner/tests/run.sh easyengine/compat-scanner:test
 
       - name: Build and push ${{ matrix.others }} image
         uses: docker/build-push-action@v7
