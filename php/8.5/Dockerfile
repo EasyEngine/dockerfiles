@@ -121,14 +121,14 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-#RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux\.tar\.gz"' | head -n 1 | sed 's/.*"\(.*\)".*/\1/') && \
-#curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
-#export NR_INSTALL_USE_CP_NOT_LN=1 && \
-#export NR_INSTALL_SILENT=1 && \
-#/tmp/newrelic-php5-*/newrelic-install install && \
-#rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
-#
-#ENV NR_PORT=/run/newrelic/newrelic.sock
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux\.tar\.gz"' | head -n 1 | sed 's/.*"\(.*\)".*/\1/') && \
+curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
+export NR_INSTALL_USE_CP_NOT_LN=1 && \
+export NR_INSTALL_SILENT=1 && \
+/tmp/newrelic-php5-*/newrelic-install install && \
+rm -rf /tmp/newrelic-php5-* /tmp/nrinstall*
+
+ENV NR_PORT=/run/newrelic/newrelic.sock
 
 # Setup logs
 RUN mkdir -p /var/log/php; \
@@ -141,8 +141,8 @@ COPY expose_off.ini /usr/local/etc/php/conf.d/expose_off.ini
 COPY bashrc /root/.bashrc
 COPY bashrc /var/www/.bashrc
 COPY docker-entrypoint.sh /usr/local/bin/
-#COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
-#COPY newrelic.ini /data/newrelic.ini
+COPY newrelic.ini /usr/local/etc/php/conf.d/newrelic.ini
+COPY newrelic.ini /data/newrelic.ini
 
 WORKDIR /var/www/htdocs
 RUN usermod -s /bin/bash www-data
