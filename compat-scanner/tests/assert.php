@@ -382,7 +382,8 @@ tool_error( 'est-inf', 'bad arguments: COMPAT_SECONDS_PER_BATCH must be a finite
 tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1', 2, false );
 
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
-eq( trim( (string) file_get_contents( "$dir/mount" ) ), 'readonly', 'code mount is read-only inside the container' );
+eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
+eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mount is read-only inside the container' );
 
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

@@ -196,10 +196,14 @@ echo "scan fullout: rc=$rc $(head -c 300 "$RES/fullout.stdout")"
 after=$(tree_sum "$WORK/wp")
 [ "$before" = "$after" ] && echo unchanged > "$RES/tree" || echo changed > "$RES/tree"
 
-# The code mount is read-only for the scanner.
-docker run --rm --network none --read-only --cap-drop ALL --user 33:33 \
-	--mount "type=bind,src=$(realpath "$WORK/wp"),dst=/var/www,readonly" \
-	--entrypoint sh "$IMAGE" -c 'touch /var/www/htdocs/x 2>/dev/null && echo writable || echo readonly' > "$RES/mount"
+# The code mount is read-only for the scanner: a directory uid 33 can write to takes the write without readonly, not with it.
+mkdir -p "$WORK/mountprobe/htdocs" && chmod 0755 "$WORK/mountprobe" && chmod 0777 "$WORK/mountprobe/htdocs"
+for m in rw ro; do
+	opt=""; [ "$m" = ro ] && opt=",readonly"
+	docker run --rm --network none --read-only --cap-drop ALL --user 33:33 \
+		--mount "type=bind,src=$(realpath "$WORK/mountprobe"),dst=/var/www$opt" \
+		--entrypoint sh "$IMAGE" -c "touch /var/www/htdocs/x-$m 2>/dev/null && echo writable || echo readonly" > "$RES/mount-$m"
+done
 
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
