@@ -64,6 +64,15 @@ dangling=$(run '
 ')
 [ -n "$dangling" ] && errors+=("ini files load a missing .so: $dangling")
 
+# 4. Every loaded extension must report a real version: a source built from git can report a
+# placeholder such as @PACKAGE_VERSION@, which version gates (WordPress's Imagick check) reject.
+versions_php='foreach (get_loaded_extensions() as $e) { $v = phpversion($e); echo (is_string($v) && $v !== "" && strpos($v, "@") === false) ? "ok" : "bad", " ", $e, "=", var_export($v, true), "\n"; }'
+if ! versions=$(docker run --rm --pull=never --entrypoint php "$image" -r "$versions_php" 2>&1); then
+	errors+=("extension version check failed: $versions")
+elif bad=$(grep -v '^ok ' <<<"$versions"); then
+	errors+=("extensions without a real version: ${bad//$'\n'/, }")
+fi
+
 if [ ${#errors[@]} -gt 0 ]; then
 	for e in "${errors[@]}"; do
 		# Keep multi-line details inside one annotation.
@@ -72,4 +81,7 @@ if [ ${#errors[@]} -gt 0 ]; then
 	done
 	exit 1
 fi
-echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini."
+echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini, every extension reports a version."
+# Third-party versions (those that differ from PHP's own) for the build log.
+php_version=$(docker run --rm --pull=never --entrypoint php "$image" -r 'echo PHP_VERSION;' 2>/dev/null)
+echo "$image: PHP $php_version; $(sed -n "s/^ok \([^=]*\)='\(.*\)'$/\1 \2/p" <<<"$versions" | grep -v " $php_version\$" | tr '\n' ',' | sed 's/,$//; s/,/, /g')"

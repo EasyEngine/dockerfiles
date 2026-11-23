@@ -16,6 +16,8 @@ RUN set -ex; \
 		libjpeg62-turbo-dev \
 		libkrb5-dev \
 		libmagickwand-dev \
+		# ImageMagick's AVIF encoder; a libheif1 Recommends, so --no-install-recommends leaves it out.
+		libheif-plugin-aomenc \
 		libgraphicsmagick1-dev \
 		libmcrypt-dev \
 		libicu-dev \
@@ -42,7 +44,7 @@ RUN pecl install memcached; \
 	pecl install -n mcrypt; \
 	echo "yes" | pecl install imap; \
 	pecl install timezonedb; \
-    # pecl install imagick; \
+	pecl install imagick-3.8.1; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \
 	docker-php-ext-install gd; \
@@ -65,29 +67,11 @@ RUN pecl install memcached; \
 	docker-php-ext-enable redis; \
 	docker-php-ext-enable timezonedb; \
 	docker-php-ext-enable apcu; \
-	# docker-php-ext-enable imagick; \
+	docker-php-ext-enable imagick; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=imap.so" > /usr/local/etc/php/conf.d/imap.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
-
-# Temp workaround for imagick
-RUN apt update && apt install -y git --no-install-recommends && \
-    git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
-    cd /tmp/imagick && \
-    git fetch origin master && \
-    git switch master && \
-    cd /tmp/imagick && \
-    phpize && \
-    ./configure && \
-    make && \
-    make install && \
-    docker-php-ext-enable imagick && \
-    apt remove -y git && \
-    apt autoremove -y && \
-    apt clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
