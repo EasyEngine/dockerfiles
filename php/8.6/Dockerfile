@@ -37,7 +37,7 @@ RUN set -ex; \
 #	apt-get install -y libc-client-dev
 
 # The 8.6 base image has no pecl (docker-library/php#1654), so extensions are built from source tarballs.
-# The latest PECL releases of memcached, redis and apcu don't build on 8.6 yet; their upstream fixes are pinned instead.
+# The latest PECL releases of memcached, redis, apcu and imagick don't build on 8.6 yet; their upstream fixes are pinned instead.
 RUN set -eux; \
 	docker-php-source extract; \
 	fetch_ext() { mkdir -p "/usr/src/php/ext/$1"; curl -fsSL "$2" | tar -xz -C "/usr/src/php/ext/$1" --strip-components=1; }; \
@@ -49,6 +49,12 @@ RUN set -eux; \
 	docker-php-ext-install redis; \
 	docker-php-ext-install apcu; \
 	docker-php-ext-install timezonedb; \
+	# imagick 3.8.1 lacks the 8.6 fix (Imagick/imagick#795). Set the version from package.xml as pecl's packaging does;
+	# a git source reports @PACKAGE_VERSION@, which WordPress rejects (it then falls back to GD).
+	fetch_ext imagick https://github.com/Imagick/imagick/archive/55ed2e9fda264395636a2e27e51f31673f5566ab.tar.gz; \
+	imagick_version=$(sed -n '/<version>/,/<\/version>/s/.*<release>\(.*\)<\/release>.*/\1/p' /usr/src/php/ext/imagick/package.xml); \
+	sed -i "s/@PACKAGE_VERSION@/${imagick_version:?}/" /usr/src/php/ext/imagick/php_imagick.h; \
+	docker-php-ext-install imagick; \
 	# mcrypt and imap don't build on 8.6 yet, even from their upstream heads.
 	# fetch_ext mcrypt https://pecl.php.net/get/mcrypt; \
 	# docker-php-ext-install mcrypt; \
@@ -77,24 +83,6 @@ RUN set -eux; \
 	docker-php-source delete; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
-
-# Temp workaround for imagick
-RUN apt update && apt install -y git --no-install-recommends && \
-    git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
-    cd /tmp/imagick && \
-    git fetch origin master && \
-    git switch master && \
-    cd /tmp/imagick && \
-    phpize && \
-    ./configure && \
-    make && \
-    make install && \
-    docker-php-ext-enable imagick && \
-    apt remove -y git && \
-    apt autoremove -y && \
-    apt clean && \
-    rm -rf /var/lib/apt/lists/* && \
-    rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
