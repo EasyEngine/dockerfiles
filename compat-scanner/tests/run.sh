@@ -59,15 +59,34 @@ scan() {
 	echo "scan $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"
 }
 
-# during <name> <command...>: runs the command in the background while scan <name> runs its first (slow) PHPCS run.
-# /out/.work is 0700 to uid 33, so a non-root runner can only see that it exists.
+# PID of the container's PHPCS process (not busybox timeout's watcher), if one is running.
+phpcs_pid() { docker top "$1" -o pid,args 2>/dev/null | awk '$2 ~ /\/php$/ && /php_codesniffer\/bin\/phpcs/ { print $1; exit }'; }
+
+# during <name> <command...>: runs the command while scan <name> (COMPAT_DEBUG=1) is in its first PHPCS run, so
+# after the listing, with the container paused; writes ok or why not to $RES/<name>.sync.
 during() {
 	local name=$1
 	shift
 	(
-		for _ in $(seq 1 1200); do [ -d "$WORK/out-$name/.work" ] && break; sleep 0.05; done
-		sleep 0.5
-		"$@"
+		set +e
+		c="ee-php-compat-test-$name" res="no PHPCS run seen"
+		for _ in $(seq 1 1200); do
+			[ -e "$RES/$name.rc" ] && break
+			pid=$(phpcs_pid "$c")
+			if [ -n "$pid" ]; then
+				res="PHPCS run $pid ended before the pause"
+				if docker pause "$c" > /dev/null 2>&1; then
+					# Still the same run and no batch finished yet: the next file isn't checked before the change.
+					if [ "$(phpcs_pid "$c")" = "$pid" ] && ! grep -q '] batch ' "$RES/$name.stderr"; then
+						if "$@"; then res=ok; else res="command failed"; fi
+					fi
+					docker unpause "$c" > /dev/null 2>&1
+				fi
+				break
+			fi
+			sleep 0.05
+		done
+		echo "$res" > "$RES/$name.sync"
 	) &
 }
 
@@ -133,10 +152,10 @@ scan php-rel-link "$WORK/php-rel-link" php /var/www/htdocs/current/public 8.4 60
 
 # A deploy re-points current mid-scan: no verdict. A file that grows before its batch: unreadable.
 during switch switch_release "$WORK/switch"
-scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1
+scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
 during changed grow_file "$WORK/changed/htdocs/wp-content/plugins/p/z.php"
-scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1
+scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
 # A root uid 33 can't reach isn't no_code_found; a report that can't be published is a tool_error.
 scan rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4 600

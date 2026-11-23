@@ -264,7 +264,10 @@ eq( [ $wide['status'] ?? null, $wide['php_files'] ?? null ], [ 'ok', 20000 ], 'w
 
 $fatal = tool_error( 'fatal', 'internal error: Allowed memory size', 1 );
 tool_error( 'flood-cap', 'report larger than 1024 bytes', 1 );
-check( false !== strpos( raw( 'flood-cap.stderr' ), 'rc=25' ), 'flood-cap: PHPCS stopped at the file size limit (SIGXFSZ)' );
+// SIGXFSZ is 25, or 153 with the core flag a piped core_pattern sets; EFBIG (exit 255) if SIGXFSZ is ignored.
+$fc_err = raw( 'flood-cap.stderr' );
+$fc_rc  = preg_match( '/\] batch \d+ files rc=(\d+)/', $fc_err, $m ) ? (int) $m[1] : null;
+check( null !== $fc_rc && ( 25 === ( $fc_rc & 0x7f ) || ( 255 === $fc_rc && false !== strpos( $fc_err, 'errno=27 File too large' ) ) ), "flood-cap: PHPCS stopped at the file size limit (rc=$fc_rc)" );
 check( false !== strpos( raw( 'flood-cap.stderr' ), 'core limit 0' ), 'flood-cap: core dumps disabled' );
 tool_error( 'full-cap', 'report larger than 100000 bytes', 1 );
 tool_error( 'wide-cap', 'file list larger than 100000 bytes', 1 );
@@ -348,6 +351,9 @@ tool_error( 'badver', 'bad arguments: version must look like 8.4', 2, false );
 eq( out( 'est-nocode' ), [ 'v' => 1, 'status' => 'no_code_found', 'estimate' => true, 'site' => 'fixture.test', 'target' => '8.4', 'safe_to_upgrade' => null ], 'est-nocode: no_code_found' );
 // ------------------------------------------------- changes, access, limits
 
+foreach ( [ 'switch', 'changed' ] as $name ) {
+	eq( trim( raw( "$name.sync" ) ), 'ok', "$name: the change lands after the listing, before the next file" );
+}
 tool_error( 'switch', 'the site code changed during the scan', 1 );
 $ch = out( 'changed' );
 eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed: no verdict, the unchanged file checked' );
