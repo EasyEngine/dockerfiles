@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# Fixture test for the compat-scanner image: runs it with the flags EE uses and checks the results.
+# Usage: tests/run.sh [image]   (default easyengine/compat-scanner:test)
+set -euo pipefail
+
+IMAGE=${1:-easyengine/compat-scanner:test}
+HERE=$(cd "$(dirname "$0")" && pwd)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/compat-scanner-test.XXXXXX")
+RES="$WORK/results"
+mkdir -p "$RES"
+# shellcheck source=fixture.sh
+. "$HERE/fixture.sh"
+
+cleanup() { chmod -R u+rwX "$WORK" 2>/dev/null || true; rm -rf "$WORK" 2>/dev/null || sudo rm -rf "$WORK"; }
+[ -n "${KEEP:-}" ] || trap cleanup EXIT
+
+# EE's out dir is 0700 and owned by 33; without root a world-writable dir stands in for it.
+new_out() {
+	local d="$WORK/out-$1"
+	mkdir -p "$d"
+	if [ "$(id -u)" = 0 ]; then chown 33:33 "$d" && chmod 0700 "$d"; else chmod 0777 "$d"; fi
+	echo "$d"
+}
+
+tree_sum() { (cd "$1" && find . -printf '%p %s %T@ %m\n' | LC_ALL=C sort | md5sum | cut -d' ' -f1); }
+
+# Entrypoint memory override: ENTRY_MEMORY=4M scan ... runs the script with that limit.
+entry() {
+	if [ -n "${ENTRY_MEMORY:-}" ]; then
+		echo --entrypoint php "$IMAGE" -d "memory_limit=$ENTRY_MEMORY" /opt/compat-scanner/bin/compat-scanner.php
+	else
+		echo "$IMAGE"
+	fi
+}
+
+# scan <name> <app> <type> <path> <version> <timeout> [docker args...]
+scan() {
+	local name=$1 app=$2 type=$3 path=$4 ver=$5 timeout=$6
+	shift 6
+	local out rc=0
+	out=$(new_out "$name")
+	# OUT_DIR_AT=report.json: a directory already there, so publishing the report fails.
+	if [ -n "${OUT_DIR_AT:-}" ]; then mkdir "$out/$OUT_DIR_AT" && chmod 0777 "$out/$OUT_DIR_AT"; fi
+	# The outer timeout keeps a hanging scan from blocking the test run.
+	# shellcheck disable=SC2046
+	timeout 900 docker run --rm --init --name "ee-php-compat-test-$name" \
+		--network none --read-only --tmpfs /tmp:size=64m \
+		--cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+		--memory 1g --memory-swap 1g --cpus 1 --cpu-shares 256 \
+		--user 33:33 \
+		-e COMPAT_SITE=fixture.test -e COMPAT_IMAGE="$IMAGE" "$@" \
+		--mount "type=bind,src=$(realpath "$app"),dst=/var/www,readonly" \
+		--mount "type=bind,src=$out,dst=/out" \
+		$(entry) scan "$type" "$path" "$ver" "$timeout" > "$RES/$name.stdout" 2> "$RES/$name.stderr" || rc=$?
+	docker rm -f "ee-php-compat-test-$name" > /dev/null 2>&1 || true
+	echo "$rc" > "$RES/$name.rc"
+	if [ -f "$out/report.json" ]; then cp "$out/report.json" "$RES/$name.report.json"; fi
+	(cd "$out" && find . -mindepth 1 | LC_ALL=C sort) > "$RES/$name.outdir" 2>/dev/null || sudo sh -c "cd '$out' && find . -mindepth 1" > "$RES/$name.outdir"
+	echo "scan $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"
+}
+
+# PID of the container's PHPCS process (not busybox timeout's watcher), if one is running.
+phpcs_pid() { docker top "$1" -o pid,args 2>/dev/null | awk '$2 ~ /\/php$/ && /php_codesniffer\/bin\/phpcs/ { print $1; exit }'; }
+
+# during <name> <command...>: runs the command while scan <name> (COMPAT_DEBUG=1) is in its first PHPCS run, so
+# after the listing, with the container paused; writes ok or why not to $RES/<name>.sync.
+during() {
+	local name=$1
+	shift
+	(
+		set +e
+		c="ee-php-compat-test-$name" res="no PHPCS run seen"
+		for _ in $(seq 1 1200); do
+			[ -e "$RES/$name.rc" ] && break
+			pid=$(phpcs_pid "$c")
+			if [ -n "$pid" ]; then
+				res="PHPCS run $pid ended before the pause"
+				if docker pause "$c" > /dev/null 2>&1; then
+					# Still the same run and no batch finished yet: the next file isn't checked before the change.
+					if [ "$(phpcs_pid "$c")" = "$pid" ] && ! grep -q '] batch ' "$RES/$name.stderr"; then
+						if "$@"; then res=ok; else res="command failed"; fi
+					fi
+					docker unpause "$c" > /dev/null 2>&1
+				fi
+				break
+			fi
+			sleep 0.05
+		done
+		echo "$res" > "$RES/$name.sync"
+	) &
+}
+
+switch_release() { ln -sfn releases/B "$1/htdocs/current.new" && mv -T "$1/htdocs/current.new" "$1/htdocs/current"; }
+grow_file() { echo '// more' >> "$1"; }
+
+# estimate <name> <app> <type> <path> <version> [docker args...]
+estimate() {
+	local name=$1 app=$2 type=$3 path=$4 ver=$5 rc=0
+	shift 5
+	# shellcheck disable=SC2046
+	docker run --rm --init \
+		--network none --read-only --tmpfs /tmp:size=64m \
+		--cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+		--memory 1g --memory-swap 1g --cpus 1 --cpu-shares 256 \
+		--user 33:33 \
+		-e COMPAT_SITE=fixture.test "$@" \
+		--mount "type=bind,src=$(realpath "$app"),dst=/var/www,readonly" \
+		$(entry) estimate "$type" "$path" "$ver" 120 > "$RES/$name.stdout" 2> "$RES/$name.stderr" || rc=$?
+	echo "$rc" > "$RES/$name.rc"
+	echo "estimate $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"
+}
+
+wp_fixture "$WORK/wp" 1 1
+wp_fixture "$WORK/wp-clean" 0 0
+wp_fixture "$WORK/wp-null" 0 1
+php_fixture "$WORK/php"
+oom_fixture "$WORK/oom"
+flood_fixture "$WORK/flood"
+wide_fixture "$WORK/wide"
+wpcfg_fixture "$WORK/wpcfg-dir" dir
+wpcfg_fixture "$WORK/wpcfg-parent" parent
+php_release_fixture "$WORK/php-rel" real
+php_release_fixture "$WORK/php-rel-link" link
+switch_fixture "$WORK/switch"
+changed_fixture "$WORK/changed"
+locked_root_fixture "$WORK/rootlock"
+bigmsg_fixture "$WORK/bigmsg"
+mkdir -p "$WORK/empty/htdocs" && chmod -R a+rX "$WORK/empty"
+
+before=$(tree_sum "$WORK/wp")
+scan full "$WORK/wp" wp /var/www/htdocs/current 8.4 600
+scan clean "$WORK/wp-clean" wp /var/www/htdocs/current 8.4 600
+scan null "$WORK/wp-null" wp /var/www/htdocs/current 8.4 600
+scan batchmem "$WORK/wp" wp /var/www/htdocs/current 8.4 600 -e COMPAT_BATCH_MEMORY=8M -e COMPAT_FILE_MEMORY=448M
+scan filemem "$WORK/wp" wp /var/www/htdocs/current 8.4 600 -e COMPAT_BATCH_MEMORY=8M -e COMPAT_FILE_MEMORY=8M -e COMPAT_RETRY_MEMORY=448M
+scan allmem "$WORK/wp" wp /var/www/htdocs/current 8.4 600 -e COMPAT_BATCH_MEMORY=8M -e COMPAT_FILE_MEMORY=8M -e COMPAT_RETRY_MEMORY=8M
+scan timeout "$WORK/wp" wp /var/www/htdocs/current 8.4 1 -e COMPAT_BATCH_SIZE=1
+scan php "$WORK/php" php /var/www/htdocs/public 8.4 600
+scan nocode "$WORK/empty" wp /var/www/htdocs 8.4 600
+scan badargs "$WORK/wp" wp /etc 8.4 600
+estimate est "$WORK/wp" wp /var/www/htdocs/current 8.4
+estimate est-php "$WORK/php" php /var/www/htdocs/public 8.4
+estimate est-nocode "$WORK/empty" wp /var/www/htdocs 8.4
+
+# wp-config.php: the one WordPress loads, as component other/wp-config.php.
+scan wpcfg-dir "$WORK/wpcfg-dir" wp /var/www/htdocs 8.4 600
+scan wpcfg-parent "$WORK/wpcfg-parent" wp /var/www/htdocs 8.4 600
+# php CI/CD layout: only the live release; a symlinked releases/ isn't the layout.
+scan php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4 600
+estimate est-php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4
+scan php-rel-link "$WORK/php-rel-link" php /var/www/htdocs/current/public 8.4 600
+
+# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: unreadable.
+during switch switch_release "$WORK/switch"
+scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
+wait || true
+during changed grow_file "$WORK/changed/htdocs/wp-content/plugins/p/z.php"
+scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
+wait || true
+# A root uid 33 can't reach isn't no_code_found; a report that can't be published is a tool_error.
+scan rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4 600
+estimate est-rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4
+OUT_DIR_AT=report.json scan reportdir "$WORK/empty" wp /var/www/htdocs 8.4 600
+# A message longer than the reader's line limit is cut, not a failed scan.
+scan bigmsg "$WORK/bigmsg" wp /var/www/htdocs 8.4 600
+# Estimate settings: non-finite, and a range that doesn't contain the estimate.
+estimate est-inf "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_SECONDS_PER_BATCH=1e309
+estimate est-factors "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_LOW_FACTOR=2 -e COMPAT_HIGH_FACTOR=0.5
+
+# A kernel OOM kill of PHPCS (container limit below PHP's) is reason memory.
+scan oom "$WORK/oom" wp /var/www/htdocs 8.4 600 --memory 300m --memory-swap 300m \
+	-e COMPAT_BATCH_MEMORY=8M -e COMPAT_FILE_MEMORY=8M -e COMPAT_RETRY_MEMORY=4G -e COMPAT_DEBUG=1
+# The entrypoint streams findings and the file list: small memory, many findings or files.
+ENTRY_MEMORY=12M scan flood "$WORK/flood" wp /var/www/htdocs 8.4 600
+ENTRY_MEMORY=8M estimate wide-est "$WORK/wide" wp /var/www/htdocs 8.4
+# A fatal error still prints one tool_error document.
+ENTRY_MEMORY=4M scan fatal "$WORK/wide" wp /var/www/htdocs 8.4 600
+# Report size cap: PHPCS's own output (SIGXFSZ) and the spool.
+scan flood-cap "$WORK/flood" wp /var/www/htdocs 8.4 600 -e COMPAT_REPORT_MAX=1024 -e COMPAT_DEBUG=1
+scan full-cap "$WORK/wp" wp /var/www/htdocs/current 8.4 600 -e COMPAT_REPORT_MAX=100000
+scan wide-cap "$WORK/wide" wp /var/www/htdocs 8.4 600 -e COMPAT_REPORT_MAX=100000
+# Estimate deadline hit while calibrating; a version with a trailing newline.
+estimate est-timeout "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1
+estimate badver "$WORK/wp" wp /var/www/htdocs/current $'8.4\n'
+
+# A full /out: a tool_error, not a quietly incomplete result.
+rc=0
+docker run --rm --init --network none --read-only --tmpfs /tmp:size=64m \
+	--cap-drop ALL --security-opt no-new-privileges --pids-limit 64 \
+	--memory 1g --memory-swap 1g --cpus 1 --user 33:33 \
+	--mount "type=bind,src=$(realpath "$WORK/flood"),dst=/var/www,readonly" \
+	--mount type=tmpfs,dst=/out,tmpfs-size=262144,tmpfs-mode=1777 \
+	"$IMAGE" scan wp /var/www/htdocs 8.4 600 > "$RES/fullout.stdout" 2> "$RES/fullout.stderr" || rc=$?
+echo "$rc" > "$RES/fullout.rc"
+echo "scan fullout: rc=$rc $(head -c 300 "$RES/fullout.stdout")"
+after=$(tree_sum "$WORK/wp")
+[ "$before" = "$after" ] && echo unchanged > "$RES/tree" || echo changed > "$RES/tree"
+
+# The code mount is read-only for the scanner: a directory uid 33 can write to takes the write without readonly, not with it.
+mkdir -p "$WORK/mountprobe/htdocs" && chmod 0755 "$WORK/mountprobe" && chmod 0777 "$WORK/mountprobe/htdocs"
+for m in rw ro; do
+	opt=""; [ "$m" = ro ] && opt=",readonly"
+	docker run --rm --network none --read-only --cap-drop ALL --user 33:33 \
+		--mount "type=bind,src=$(realpath "$WORK/mountprobe"),dst=/var/www$opt" \
+		--entrypoint sh "$IMAGE" -c "touch /var/www/htdocs/x-$m 2>/dev/null && echo writable || echo readonly" > "$RES/mount-$m"
+done
+
+chmod -R a+rX "$RES"
+docker run --rm --network none --read-only --user 33:33 \
+	--mount "type=bind,src=$RES,dst=/r,readonly" \
+	--mount "type=bind,src=$HERE/assert.php,dst=/t/assert.php,readonly" \
+	--entrypoint php "$IMAGE" /t/assert.php /r

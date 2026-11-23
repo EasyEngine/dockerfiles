@@ -1,0 +1,24 @@
+{
+    "name": "easyengine/compat-scanner",
+    "description": "PHP compatibility scanner toolchain for ee site php-compat.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "dealerdirect/phpcodesniffer-composer-installer": "^1.0",
+        "phpcompatibility/php-compatibility": "10.0.0-alpha3",
+        "phpcompatibility/phpcompatibility-wp": "3.0.0-alpha3",
+        "phpcsstandards/phpcsutils": "^1.1",
+        "squizlabs/php_codesniffer": "~4.0.0"
+    },
+    "minimum-stability": "alpha",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        },
+        "platform": {
+            "php": "8.4"
+        },
+        "sort-packages": true
+    }
+}
