@@ -404,5 +404,9 @@ eq( [ $es['status'] ?? null, $es['php_files'] ?? null, $es['php_bytes'] ?? null,
 tool_error( 'badargs-dotdot', 'bad arguments: path must be', 2, false );
 tool_error( 'badargs-slashdot', 'bad arguments: path must be', 2, false );
 
+$tb = out( 'tempbackup' );
+eq( [ $tb['status'] ?? null, field( $tb, 'safe_to_upgrade' ), $tb['errors'] ?? null, $tb['files_checked'] ?? null ], [ 'ok', true, 0, 1 ], "tempbackup: WordPress' rollback copies in upgrade-temp-backup/ aren't scanned" );
+eq( comp_rows( report( 'tempbackup' ) ), [ [ 'plugin', 'p', null, 'P', null, 1, 0, 0 ] ], 'tempbackup: only the live plugin' );
+
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

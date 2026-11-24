@@ -22,7 +22,8 @@ const PHPCS_BIN       = TOOL_DIR . '/vendor/squizlabs/php_codesniffer/bin/phpcs'
 const REPORT_CLASS    = TOOL_DIR . '/src/LinesReport.php';
 const CALIBRATION_DIR = TOOL_DIR . '/calibration';
 const JSON_FLAGS      = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages' ];
+// upgrade-temp-backup: WordPress' rollback copies of updated plugins and themes (6.3+).
+const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages', 'upgrade-temp-backup' ];
 const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
 const TYPE_ORDER      = [ 'plugin' => 0, 'theme' => 1, 'mu-plugin' => 2, 'directory' => 3, 'other' => 4 ];

@@ -219,6 +219,10 @@ estimate est-slashes "$WORK/wp" wp //var/www/htdocs//current 8.4
 scan badargs-dotdot "$WORK/wp" wp /var/www/../etc 8.4 600
 scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
 
+# WordPress' rollback copies in wp-content/upgrade-temp-backup/ aren't live code.
+tempbackup_fixture "$WORK/tempbackup"
+scan tempbackup "$WORK/tempbackup" wp /var/www/htdocs 8.4 600
+
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
 	--mount "type=bind,src=$RES,dst=/r,readonly" \

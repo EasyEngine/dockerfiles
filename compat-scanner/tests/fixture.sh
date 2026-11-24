@@ -295,3 +295,13 @@ bigmsg_fixture() {
 	printf "<?php\nfunction f() {\n\tglobal \$\$x['%s'];\n}\n" "$(head -c 1100000 /dev/zero | tr '\0' a)" > "$p/big.php"
 	chmod -R a+rX "$1"
 }
+
+# tempbackup_fixture <app-dir>: a clean plugin beside WordPress' rollback copies in wp-content/upgrade-temp-backup/.
+tempbackup_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	php_file "$wc/upgrade-temp-backup/plugins/old/old.php" '/* Plugin Name: Old */
+each( $a );'
+	php_file "$wc/upgrade-temp-backup/themes/oldt/functions.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
