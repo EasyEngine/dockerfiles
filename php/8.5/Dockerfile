@@ -37,13 +37,13 @@ RUN curl -fsSL https://packages.sury.org/php/README.txt | bash && \
 	apt-get update && \
 	apt-get install -y libc-client-dev
 
-RUN pecl install memcached; \
-	pecl install redis; \
-	pecl install apcu; \
+RUN pecl install memcached-3.4.0; \
+	pecl install redis-6.3.0; \
+	pecl install apcu-5.1.28; \
 	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
-	pecl install -n mcrypt; \
-	echo "yes" | pecl install imap; \
-	pecl install timezonedb; \
+	pecl install -n mcrypt-1.0.9; \
+	echo "yes" | pecl install imap-1.0.3; \
+	pecl install timezonedb-2026.6; \
 	pecl install imagick-3.8.1; \
 	docker-php-ext-configure gd --with-freetype --with-jpeg --with-webp; \
 	docker-php-ext-configure zip; \

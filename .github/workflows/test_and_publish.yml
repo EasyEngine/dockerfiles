@@ -96,16 +96,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # compat-scanner is also built and tested on tags, so the fixture tests gate its push.
       - name: Build ${{ matrix.others }} image
         uses: docker/build-push-action@v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || matrix.others == 'compat-scanner'
         with:
           context: ${{ matrix.others }}
           load: ${{ matrix.others == 'compat-scanner' }}
           tags: easyengine/${{ matrix.others }}:test
 
       - name: Test compat-scanner image
-        if: github.event_name == 'pull_request' && matrix.others == 'compat-scanner'
+        if: matrix.others == 'compat-scanner'
         run: bash compat-scanner/tests/run.sh easyengine/compat-scanner:test
 
       - name: Build and push ${{ matrix.others }} image

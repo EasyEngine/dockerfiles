@@ -15,7 +15,7 @@ RUN set -eux; \
     php /tmp/select.php /tmp/wordpress/wp-includes /opt/compat-scanner/calibration; \
     rm -rf /tmp/wp.tar.gz /tmp/wordpress /tmp/select.php
 
-FROM php:8.4-cli-alpine
+FROM php:8.4.28-cli-alpine3.24
 
 LABEL org.label-schema.schema-version="1.0.0"
 LABEL org.label-schema.vendor="EasyEngine"

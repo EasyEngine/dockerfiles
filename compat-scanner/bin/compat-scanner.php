@@ -22,9 +22,13 @@ const PHPCS_BIN       = TOOL_DIR . '/vendor/squizlabs/php_codesniffer/bin/phpcs'
 const REPORT_CLASS    = TOOL_DIR . '/src/LinesReport.php';
 const CALIBRATION_DIR = TOOL_DIR . '/calibration';
 const JSON_FLAGS      = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages' ];
+// upgrade-temp-backup: WordPress' rollback copies of updated plugins and themes (6.3+).
+const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages', 'upgrade-temp-backup' ];
 const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
+// WordPress core in a directory that holds wp-settings.php and wp-includes/: never scanned.
+const CORE_DIRS       = [ 'wp-admin', 'wp-includes' ];
+const CORE_FILES      = [ 'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
 const TYPE_ORDER      = [ 'plugin' => 0, 'theme' => 1, 'mu-plugin' => 2, 'directory' => 3, 'other' => 4 ];
 // Same as EE's REPORT_MAX: EE rejects a larger report anyway.
 const REPORT_MAX      = 134217728;
@@ -33,6 +37,10 @@ const FSIZE_SLACK     = 2097152;
 const HEADER_MAX      = 6144;
 const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
+// File extensions checked as PHP code, matched case-insensitively.
+const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', 'engine', 'php5', 'php7' ];
+// Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
+const CALIBRATION_RESERVE = 20;
 
 class TimedOut extends RuntimeException {
 }
@@ -51,6 +59,8 @@ final class Scanner {
 	private $start;
 	/** @var float */
 	private $deadline;
+	/** @var float */
+	private $listDeadline;
 	/** @var int */
 	private $timeoutLabel;
 	/** @var bool */
@@ -62,8 +72,10 @@ final class Scanner {
 	private $compKeys = [];
 	/** @var string|null Real path of the content root (wp-content, or htdocs for php sites). */
 	private $contentReal;
-	/** @var string|null Real path of the WordPress directory (wp only). */
-	private $siteReal;
+	/** @var string|null Real path of the directory scanned (wp: the WordPress directory; php: htdocs). */
+	private $rootReal;
+	/** @var array<string,bool> Directories holding WordPress core, by real path. */
+	private $coreDirs = [];
 	/** @var string[] Real paths of the releases a php site's `current` doesn't point to. */
 	private $oldReleases = [];
 	/** @var array<int,array<int,bool>> Visited directories by device and inode. */
@@ -101,6 +113,7 @@ final class Scanner {
 
 		$this->timeoutLabel = $limit;
 		$this->deadline     = $this->start + $limit;
+		$this->listDeadline = $this->isScan ? $this->deadline : $this->deadline - min( CALIBRATION_RESERVE, $limit / 4 );
 	}
 
 	public function run(): array {
@@ -136,7 +149,8 @@ final class Scanner {
 	/**
 	 * Lists the files in scope. For WordPress, plugins, themes and mu-plugins of
 	 * every content root are walked before anything else, so a directory reached
-	 * both from there and through another path belongs to the component.
+	 * both from there and through another path belongs to the component; the rest
+	 * of the WordPress directory (everything but core) comes last.
 	 */
 	private function listFiles(): void {
 		$this->pins[ $this->cfg['path'] ] = @realpath( $this->cfg['path'] );
@@ -145,6 +159,7 @@ final class Scanner {
 			if ( ! $this->enterRoot( $root ) ) {
 				return;
 			}
+			$this->rootReal    = $this->contentReal;
 			$this->oldReleases = $this->oldReleases( $this->cfg['path'] );
 			$other             = $this->comp( 'other', '', null, $root );
 			$entries           = $this->readDir( $root );
@@ -152,61 +167,159 @@ final class Scanner {
 				$this->notChecked( $other, './', 'unreadable' );
 				return;
 			}
-			$this->scanPhpRoot( $root, $entries, $other );
+			$this->scanTop( $root, $entries, $other, '' );
+			$this->scanBeside();
 			return;
 		}
 
-		$root = $this->cfg['path'] . '/wp-content';
-		if ( ! $this->enterRoot( $root ) ) {
+		$wp   = $this->cfg['path'];
+		$top  = $this->wpDir( $wp );
+		$root = $wp . '/wp-content';
+		if ( null === $top ) {
 			return;
 		}
-		// Before siteReal is set: the config usually sits inside the WordPress directory.
-		$config = $this->wpConfig( $this->cfg['path'] );
+		$config = $this->wpConfig( $wp );
 		if ( null !== $config ) {
 			// Reported by its real path relative to /var/www (the file to edit), e.g. htdocs/wp-config.php.
 			$real = @realpath( $config );
 			$path = false !== $real && $this->inside( $real ) ? $real : $config;
 			$this->visit( $path, 'wp-config.php', $this->comp( 'other', 'wp-config.php', null, MOUNT_ROOT ) );
 		}
-		$site = @realpath( $this->cfg['path'] );
-		if ( false !== $site && $this->inside( $site ) ) {
-			$this->siteReal = $site;
-		}
 
-		$main = $this->wpRoot( $root, null );
-		if ( null === $main['entries'] ) {
-			$this->notChecked( $main['other'], './', 'unreadable' );
-			return;
-		}
-
-		// Branch roots: other direct children holding plugins/ or themes/.
+		$main       = null;
 		$candidates = [];
-		foreach ( $main['entries'] as $name ) {
-			if ( in_array( $name, STRUCTURAL, true ) ) {
+		if ( $this->enterContent( $root ) ) {
+			$main = $this->wpRoot( $root, null );
+			if ( null === $main['entries'] ) {
+				$this->notChecked( $main['other'], './', 'unreadable' );
+				$main = null;
+			} else {
+				// Branch roots: other direct children holding plugins/ or themes/.
+				foreach ( $main['entries'] as $name ) {
+					if ( in_array( $name, STRUCTURAL, true ) ) {
+						continue;
+					}
+					$path = $root . '/' . $name;
+					if ( $this->contentLike( $path ) ) {
+						$candidates[] = [ (string) $name, $path, true ];
+					}
+				}
+			}
+		}
+
+		// Content dirs beside wp-content (a moved WP_CONTENT_DIR) are branch roots too, named by their path under /var/www.
+		$rest = [];
+		foreach ( $top as $name ) {
+			if ( 'wp-content' === $name || in_array( $name, ANY_SKIPS, true ) ) {
 				continue;
 			}
-			$path = $root . '/' . $name;
-			$real = $this->resolve( $path );
-			if ( null !== $real && is_dir( $real ) && ! $this->outOfScope( $real ) && ( is_dir( $path . '/plugins' ) || is_dir( $path . '/themes' ) ) ) {
-				$candidates[] = [ $name, $path, $real ];
+			$path = $wp . '/' . $name;
+			if ( $this->contentLike( $path ) ) {
+				$candidates[] = [ $this->relMount( $path ), $path, false ];
+			} else {
+				$rest[] = $name;
 			}
 		}
 
 		// Main root first, so its plugins and themes win over a branch link to them.
-		$main     = $this->structural( $main );
+		if ( null !== $main ) {
+			$main = $this->structural( $main );
+		}
 		$branches = [];
-		foreach ( $candidates as list( $name, $path, $real ) ) {
-			if ( ! $this->markDir( $real ) ) {
+		$beside   = [];
+		foreach ( $candidates as list( $name, $path, $inContent ) ) {
+			if ( ! $this->markDir( (string) $this->resolve( $path ) ) ) {
 				continue;
 			}
-			$b = $this->wpRoot( $path, (string) $name );
+			$b = $this->wpRoot( $path, $name );
 			if ( null === $b['entries'] ) {
 				$this->notChecked( $b['other'], './', 'unreadable' );
 			}
-			$branches[ $name ] = $this->structural( $b );
+			if ( $inContent ) {
+				$branches[ $name ] = $this->structural( $b );
+			} else {
+				$beside[] = $this->structural( $b );
+			}
 		}
 
-		$this->others( $main, $branches );
+		if ( null !== $main ) {
+			$this->others( $main, $branches );
+		}
+		foreach ( $beside as $b ) {
+			$this->others( $b, [] );
+		}
+		// Everything else in the WordPress directory but core: custom endpoints, a second app, a linked target's siblings.
+		$this->scanTop( $wp, $rest, $this->comp( 'directory', $this->relMount( $wp ), null, $wp ), $this->relMount( $wp ) . '/' );
+	}
+
+	/** A directory in scope holding plugins/ or themes/: a content root. */
+	private function contentLike( string $path ): bool {
+		$real = $this->resolve( $path );
+		return null !== $real && is_dir( $real ) && ! $this->outOfScope( $real ) && ( is_dir( $path . '/plugins' ) || is_dir( $path . '/themes' ) );
+	}
+
+	/** Path relative to /var/www, as given (unresolved). */
+	private function relMount( string $path ): string {
+		return MOUNT_ROOT === $path ? '' : substr( $path, strlen( MOUNT_ROOT ) + 1 );
+	}
+
+	/**
+	 * Enters the WordPress directory.
+	 *
+	 * @return string[]|null Its entries, or null when there is nothing to walk.
+	 */
+	private function wpDir( string $wp ): ?array {
+		$real = @realpath( $wp );
+		if ( false === $real || ! is_dir( $real ) || ! $this->inside( $real ) ) {
+			$this->badRoot( $wp, $real, $wp . '/wp-content' );
+			return null;
+		}
+		$this->rootReal = $real;
+		$this->markDir( $real );
+		$entries = $this->readDir( $wp );
+		if ( null === $entries ) {
+			$this->notChecked( $this->comp( 'other', '', null, $wp . '/wp-content' ), './', 'unreadable' );
+		}
+		return $entries;
+	}
+
+	/** True when wp-content is a directory inside the mount; a bad link to it is not_checked. */
+	private function enterContent( string $root ): bool {
+		if ( false === @lstat( $root ) && ! $this->denied( $root ) ) {
+			return false;
+		}
+		$real = @realpath( $root );
+		if ( false === $real || ! is_dir( $real ) || ! $this->inside( $real ) ) {
+			$this->badRoot( $root, $real, $root );
+			return false;
+		}
+		$this->pins[ $root ] = $real;
+		$this->contentReal   = $real;
+		$this->markDir( $real );
+		return true;
+	}
+
+	/**
+	 * Php sites: what lies in /var/www beside htdocs (code above the public dir).
+	 * Dot entries are the www-data user's home (Composer and WP-CLI caches), not site code.
+	 */
+	private function scanBeside(): void {
+		$this->markDir( MOUNT_ROOT );
+		$loose   = $this->comp( 'directory', '..', null, MOUNT_ROOT );
+		$entries = $this->readDir( MOUNT_ROOT );
+		if ( null === $entries ) {
+			$this->notChecked( $loose, './', 'unreadable' );
+			return;
+		}
+		$entries = array_values(
+			array_filter(
+				$entries,
+				static function ( $name ) {
+					return 'htdocs' !== $name && '.' !== $name[0];
+				}
+			)
+		);
+		$this->scanTop( MOUNT_ROOT, $entries, $loose, '../' );
 	}
 
 	/**
@@ -270,16 +383,38 @@ final class Scanner {
 	private function enterRoot( string $root ): bool {
 		$real = @realpath( $root );
 		if ( false === $real || ! is_dir( $real ) || ! $this->inside( $real ) ) {
-			// A root uid 33 can't reach (EACCES on the way) may hold code: not no_code_found.
-			if ( false === $real && function_exists( 'posix_access' ) && ! @posix_access( $root ) && 13 === posix_get_last_error() ) {
-				$this->notChecked( $this->comp( 'other', '', null, $root ), './', 'unreadable' );
-			}
+			$this->badRoot( $root, $real, $root );
 			return false;
 		}
 		$this->pins[ $root ] = $real;
 		$this->contentReal   = $real;
 		$this->markDir( $real );
 		return true;
+	}
+
+	/**
+	 * A root that may hold code though it can't be entered is not_checked, not no_code_found: one uid 33
+	 * can't reach (EACCES on the way), or a link on the way that dangles or leaves the mount.
+	 *
+	 * @param string|false $real
+	 */
+	private function badRoot( string $root, $real, string $base ): void {
+		$link = false;
+		if ( false === $real || ! $this->inside( $real ) ) {
+			for ( $p = $root; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
+				if ( is_link( $p ) ) {
+					$link = true;
+					break;
+				}
+			}
+		}
+		if ( $link || ( false === $real && $this->denied( $root ) ) ) {
+			$this->notChecked( $this->comp( 'other', '', null, $base ), './', 'unreadable' );
+		}
+	}
+
+	private function denied( string $path ): bool {
+		return function_exists( 'posix_access' ) && ! @posix_access( $path ) && 13 === posix_get_last_error();
 	}
 
 	/** A content root's `other` component and its entries, top-level skips removed. */
@@ -377,6 +512,11 @@ final class Scanner {
 				continue;
 			}
 
+			// Only a lowercase .php file can be a single-file plugin, as in WordPress.
+			if ( $this->isPhpName( $name ) && ! $this->isPluginName( $name ) ) {
+				$loose[] = $name;
+				continue;
+			}
 			if ( null !== $real && ! $this->isPhpName( $name ) ) {
 				continue;
 			}
@@ -431,7 +571,10 @@ final class Scanner {
 		return $loose;
 	}
 
-	private function scanPhpRoot( string $root, array $entries, int $other ): void {
+	/**
+	 * Top level of a directory: subdirectories are `directory` components named $prefix . name, files go to $loose.
+	 */
+	private function scanTop( string $root, array $entries, int $loose, string $prefix ): void {
 		foreach ( $entries as $name ) {
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
 				continue;
@@ -440,17 +583,30 @@ final class Scanner {
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
-				if ( ! $this->outOfScope( $real ) && $this->markDir( $real ) ) {
-					$comp = $this->comp( 'directory', $name, null, $path );
+				if ( $this->inScope( $path, $real ) && $this->markDir( $real ) ) {
+					$comp = $this->comp( 'directory', $prefix . $name, null, $path );
 					$this->walk( $path, $comp );
 				}
 			} elseif ( null === $real && $this->linkMatters( $path, $name ) && ! $this->isPhpName( $name ) ) {
-				$comp = $this->comp( 'directory', $name, null, $path );
+				$comp = $this->comp( 'directory', $prefix . $name, null, $path );
 				$this->notChecked( $comp, './', 'unreadable' );
 			} else {
-				$this->visit( $path, $name, $other );
+				$this->visit( $path, $name, $loose );
 			}
 		}
+	}
+
+	/**
+	 * outOfScope(), except that a real directory (not reached through a link) above the scan root is walked:
+	 * htdocs may link into the app beside it (`htdocs -> project/app/public`); the root itself stays out.
+	 */
+	private function inScope( string $path, string $real ): bool {
+		return ! $this->outOfScope( $real ) || ( $path === $real && $this->holdsRoot( $real ) );
+	}
+
+	/** A directory above the scan root other than the mount itself. */
+	private function holdsRoot( string $real ): bool {
+		return MOUNT_ROOT !== $real && null !== $this->rootReal && 0 === strpos( $this->rootReal . '/', $real . '/' ) && $this->rootReal !== $real;
 	}
 
 	private function walk( string $dir, int $comp ): void {
@@ -479,7 +635,7 @@ final class Scanner {
 			}
 			return;
 		}
-		if ( $this->outOfScope( $real ) ) {
+		if ( ! $this->inScope( $path, $real ) ) {
 			return;
 		}
 
@@ -536,8 +692,8 @@ final class Scanner {
 	}
 
 	/**
-	 * Targets a link may not pull in: the content root and its ancestors, and
-	 * WordPress core (inside the WordPress directory, outside wp-content).
+	 * Targets a link may not pull in: the content root, the scanned directory and
+	 * their ancestors, a php site's old releases, and (wp) WordPress core.
 	 */
 	private function outOfScope( string $real ): bool {
 		foreach ( $this->oldReleases as $old ) {
@@ -545,12 +701,37 @@ final class Scanner {
 				return true;
 			}
 		}
-		if ( null !== $this->contentReal && 0 === strpos( $this->contentReal . '/', $real . '/' ) ) {
+		foreach ( [ $this->contentReal, $this->rootReal ] as $anchor ) {
+			if ( null !== $anchor && 0 === strpos( $anchor . '/', $real . '/' ) ) {
+				return true;
+			}
+		}
+		return $this->isCore( $real );
+	}
+
+	/** wp-admin/, wp-includes/ (and anything in them) and the core files beside them, wherever WordPress is installed. */
+	private function isCore( string $real ): bool {
+		if ( 'wp' !== $this->cfg['site_type'] ) {
+			return false;
+		}
+		if ( in_array( basename( $real ), CORE_FILES, true ) && $this->coreDir( dirname( $real ) ) ) {
 			return true;
 		}
-		return null !== $this->siteReal
-			&& 0 === strpos( $real . '/', $this->siteReal . '/' )
-			&& 0 !== strpos( $real . '/', $this->contentReal . '/' );
+		// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
+		for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
+			if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** A directory holding wp-settings.php and wp-includes/. */
+	private function coreDir( string $dir ): bool {
+		if ( ! isset( $this->coreDirs[ $dir ] ) ) {
+			$this->coreDirs[ $dir ] = is_file( $dir . '/wp-settings.php' ) && is_dir( $dir . '/wp-includes' );
+		}
+		return $this->coreDirs[ $dir ];
 	}
 
 	/**
@@ -568,8 +749,19 @@ final class Scanner {
 		return ! preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name );
 	}
 
+	/** PHP code: a name ending in one of CODE_EXTENSIONS, in any case. */
 	private function isPhpName( string $name ): bool {
+		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/i', $name );
+	}
+
+	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
+	private function isPluginName( string $name ): bool {
 		return '.php' === substr( $name, -4 );
+	}
+
+	/** Whether PHPCS takes the file by its extension, which it matches case-sensitively. */
+	private function phpcsTakes( string $path ): bool {
+		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/', $path );
 	}
 
 	private function inside( string $real ): bool {
@@ -617,7 +809,10 @@ final class Scanner {
 	}
 
 	private function tick(): void {
-		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->deadline ) {
+		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->listDeadline ) {
+			if ( ! $this->isScan ) {
+				throw new TimedOut( sprintf( 'too large to estimate in %d s: %d PHP files listed before the time ran out; run the check itself, without --estimate', $this->timeoutLabel, $this->listedFiles + $this->notCheckedCount ) );
+			}
 			throw new TimedOut( sprintf( 'timed out after %d s while listing files', $this->timeoutLabel ) );
 		}
 	}
@@ -699,7 +894,7 @@ final class Scanner {
 		} else {
 			$candidates = [];
 			foreach ( (array) $this->readDir( $header['at'] ) as $n ) {
-				if ( $this->isPhpName( $n ) ) {
+				if ( $this->isPluginName( $n ) ) {
 					$candidates[] = $header['at'] . '/' . $n;
 				}
 			}
@@ -838,14 +1033,16 @@ final class Scanner {
 		foreach ( $batch as $k => $f ) {
 			$real = $this->resolve( $f['path'] );
 			$st   = null === $real ? false : @stat( $real );
-			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) || $st['size'] !== $f['size'] ) {
-				$batch[ $k ]['real'] = null; // Gone or changed since the listing.
+			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
+				$batch[ $k ]['real'] = null; // Gone, or no longer a regular file.
 				continue;
 			}
+			// A file rewritten since the listing (a live site) is checked as it is now.
+			$batch[ $k ]['size']  = $st['size'];
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
-			// file whose real name doesn't end in .php: such files go through STDIN.
-			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->isPhpName( $real );
+			// file whose real name has no --extensions match: such files go through STDIN.
+			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->phpcsTakes( $real );
 			if ( ! $batch[ $k ]['stdin'] ) {
 				$plain[ $real ] = $k;
 			}
@@ -1204,7 +1401,7 @@ final class Scanner {
 			PHPCS_BIN,
 			'--standard=' . ( 'php' === $this->cfg['site_type'] ? 'PHPCompatibility' : 'PHPCompatibilityWP' ),
 			'--runtime-set', 'testVersion', $this->cfg['version'],
-			'--extensions=php', '--no-cache', '-q', '--no-colors', '--ignore-annotations',
+			'--extensions=' . implode( ',', CODE_EXTENSIONS ), '--no-cache', '-q', '--no-colors', '--ignore-annotations',
 			'--report=' . REPORT_CLASS, '--report-file=' . $report,
 		];
 
@@ -1215,8 +1412,8 @@ final class Scanner {
 				$res['unreadable'] = true;
 				return $res;
 			}
-			// PHPCS resolves --stdin-path and filters it by extension, so it must end in .php.
-			$cmd[] = '--stdin-path=' . $paths[0] . ( $this->isPhpName( $paths[0] ) ? '' : '.php' );
+			// PHPCS resolves --stdin-path and filters it by extension, so it must end in one it takes.
+			$cmd[] = '--stdin-path=' . $paths[0] . ( $this->phpcsTakes( $paths[0] ) ? '' : '.php' );
 			$cmd[] = '-';
 		} else {
 			$list = $this->work . '/phpcs.list';
@@ -1667,8 +1864,9 @@ function parse_args( array $argv, array &$cfg ): void {
 	if ( ! in_array( $cfg['site_type'], [ 'wp', 'php' ], true ) ) {
 		throw new BadArgs( 'site type must be wp or php' );
 	}
-	$path = rtrim( $cfg['path'], '/' );
-	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|//|[\x00-\x1F\x7F]#', $path ) ) {
+	// site-command keeps a --public-dir like `a//b` as typed.
+	$path = rtrim( (string) preg_replace( '#/+#', '/', $cfg['path'] ), '/' );
+	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|[\x00-\x1F\x7F]#', $path ) ) {
 		throw new BadArgs( 'path must be an absolute path under ' . MOUNT_ROOT );
 	}
 	$cfg['path'] = $path;

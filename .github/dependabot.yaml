@@ -19,6 +19,13 @@ updates:
     reviewers:
       - mrrobot47
 
+  - package-ecosystem: "composer"
+    directory: "/compat-scanner"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - mrrobot47
+
   - package-ecosystem: "docker"
     directory: "/cron"
     schedule:
