@@ -838,10 +838,12 @@ final class Scanner {
 		foreach ( $batch as $k => $f ) {
 			$real = $this->resolve( $f['path'] );
 			$st   = null === $real ? false : @stat( $real );
-			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) || $st['size'] !== $f['size'] ) {
-				$batch[ $k ]['real'] = null; // Gone or changed since the listing.
+			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
+				$batch[ $k ]['real'] = null; // Gone, or no longer a regular file.
 				continue;
 			}
+			// A file rewritten since the listing (a live site) is checked as it is now.
+			$batch[ $k ]['size']  = $st['size'];
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
 			// file whose real name doesn't end in .php: such files go through STDIN.

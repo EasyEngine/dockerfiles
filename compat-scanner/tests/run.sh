@@ -91,7 +91,7 @@ during() {
 }
 
 switch_release() { ln -sfn releases/B "$1/htdocs/current.new" && mv -T "$1/htdocs/current.new" "$1/htdocs/current"; }
-grow_file() { echo '// more' >> "$1"; }
+grow_file() { echo 'each( $a );' >> "$1"; }
 
 # estimate <name> <app> <type> <path> <version> [docker args...]
 estimate() {
@@ -150,13 +150,14 @@ scan php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4 600
 estimate est-php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4
 scan php-rel-link "$WORK/php-rel-link" php /var/www/htdocs/current/public 8.4 600
 
-# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: unreadable.
+# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: checked as it is now.
 during switch switch_release "$WORK/switch"
 scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
 during changed grow_file "$WORK/changed/htdocs/wp-content/plugins/p/z.php"
 scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
+stat -c %s "$WORK/changed/htdocs/wp-content/plugins/p/"*.php | awk '{ s += $1 } END { print s }' > "$RES/changed.bytes"
 # A root uid 33 can't reach isn't no_code_found; a report that can't be published is a tool_error.
 scan rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4 600
 estimate est-rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4
@@ -204,6 +205,12 @@ for m in rw ro; do
 		--mount "type=bind,src=$(realpath "$WORK/mountprobe"),dst=/var/www$opt" \
 		--entrypoint sh "$IMAGE" -c "touch /var/www/htdocs/x-$m 2>/dev/null && echo writable || echo readonly" > "$RES/mount-$m"
 done
+
+# A file deleted before its batch: unreadable.
+changed_fixture "$WORK/changed-gone"
+during changed-gone rm -f "$WORK/changed-gone/htdocs/wp-content/plugins/p/z.php"
+scan changed-gone "$WORK/changed-gone" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
+wait || true
 
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \

@@ -356,8 +356,8 @@ foreach ( [ 'switch', 'changed' ] as $name ) {
 }
 tool_error( 'switch', 'the site code changed during the scan', 1 );
 $ch = out( 'changed' );
-eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed: no verdict, the unchanged file checked' );
-eq( report( 'changed' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed: a file that changed since the listing is unreadable' );
+eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['errors'] ?? null, $ch['files_checked'] ?? null, $ch['files_not_checked'] ?? null ], [ 'ok', false, 1, 2, 0 ], 'changed: a file that grew since the listing is checked as it is now' );
+eq( [ $ch['php_bytes'] ?? null, array_column( comp_of( report( 'changed' ), 'plugin', 'p' )['findings'] ?? [], 'file' ) ], [ (int) trim( raw( 'changed.bytes' ) ), [ 'z.php' ] ], 'changed: its new size and content count' );
 
 $rl = out( 'rootlock' );
 eq( [ $rl['status'] ?? null, field( $rl, 'safe_to_upgrade' ), $rl['files_not_checked'] ?? null ], [ 'ok', null, 1 ], 'rootlock: an unreachable root is not no_code_found' );
@@ -384,6 +384,13 @@ tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1',
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
 eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
 eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mount is read-only inside the container' );
+
+// ---------------------------------------------------------- more edge cases
+
+eq( trim( raw( 'changed-gone.sync' ) ), 'ok', 'changed-gone: the change lands after the listing, before the next file' );
+$cg = out( 'changed-gone' );
+eq( [ $cg['status'] ?? null, field( $cg, 'safe_to_upgrade' ), $cg['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed-gone: no verdict, the remaining file checked' );
+eq( report( 'changed-gone' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed-gone: a file deleted since the listing is unreadable' );
 
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );
