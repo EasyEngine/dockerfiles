@@ -1,4 +1,4 @@
-FROM php:8.3.36-fpm
+FROM php:8.3.37-fpm
 
 LABEL maintainer="Riddhesh Sanghvi <riddhesh237@gmail.com>, Devarshi Sathiya <devarshisathiya5@gmail.com>"
 LABEL org.label-schema.schema-version="1.0.0"
@@ -16,6 +16,8 @@ RUN set -ex; \
 		libjpeg62-turbo-dev \
 		libkrb5-dev \
 		libmagickwand-dev \
+		# ImageMagick's AVIF encoder; a libheif1 Recommends, so --no-install-recommends leaves it out.
+		libheif-plugin-aomenc \
 		libgraphicsmagick1-dev \
 		libmcrypt-dev \
 		libicu-dev \
@@ -35,8 +37,8 @@ RUN curl -fsSL https://packages.sury.org/php/README.txt | bash && \
 	apt-get update && \
 	apt-get install -y libc-client-dev
 
-# RUN pecl install imagick; \ # This is not working with PHP 8.3
-RUN pecl install memcached; \
+RUN pecl install imagick-3.8.1; \
+	pecl install memcached; \
 	pecl install redis; \
 	pecl install apcu; \
 	# https://github.com/php/pecl-encryption-mcrypt/issues/7#issuecomment-1050994596
@@ -63,29 +65,11 @@ RUN pecl install memcached; \
 	docker-php-ext-install sysvsem; \
 	docker-php-ext-install sysvshm; \
 	docker-php-ext-install bcmath; \
-	docker-php-ext-enable mcrypt redis timezonedb apcu; \
+	docker-php-ext-enable imagick mcrypt redis timezonedb apcu; \
 	echo "extension=memcached.so" >> /usr/local/etc/php/conf.d/memcached.ini; \
 	echo "extension=gmagick.so" >> /usr/local/etc/php/conf.d/gmagick.ini; \
 	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
 	rm -rf /var/lib/apt/lists/*;
-
-# Temp workaround for imagick
-RUN apt update && apt install -y git --no-install-recommends && \
-	git clone https://github.com/Imagick/imagick.git --depth 1 /tmp/imagick && \
-	cd /tmp/imagick && \
-	git fetch origin master && \
-	git switch master && \
-	cd /tmp/imagick && \
-	phpize && \
-	./configure && \
-	make && \
-	make install && \
-	docker-php-ext-enable imagick && \
-	apt remove -y git && \
-	apt autoremove -y && \
-	apt clean && \
-	rm -rf /var/lib/apt/lists/* && \
-	rm -rf /tmp/imagick
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
@@ -119,7 +103,7 @@ ln -s /usr/local/etc/misc/msmtprc /etc/msmtprc && \
 chown www-data:www-data /usr/local/etc/misc/msmtprc && \
 chown www-data:www-data /etc/msmtprc
 
-RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux.tar.gz' | sed 's/.*"\(.*\)".*/\1/') && \
+RUN latest_build=$(curl -s https://download.newrelic.com/php_agent/release/ | grep 'linux\.tar\.gz"' | head -n 1 | sed 's/.*"\(.*\)".*/\1/') && \
 curl -L "https://download.newrelic.com$latest_build" | tar -C /tmp -zx && \
 export NR_INSTALL_USE_CP_NOT_LN=1 && \
 export NR_INSTALL_SILENT=1 && \
