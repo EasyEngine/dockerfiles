@@ -6,14 +6,14 @@ warn() { echo "docker-entrypoint: $*" >&2 || true; }
 # The values land in a double-quoted ini string (where PHP expands ${...}) and a sed replacement.
 nr_value_ok() { [[ $1 != *[\"\\\$]* && $1 != *[[:cntrl:]]* ]]; }
 nr_sed_escape() { printf '%s' "$1" | sed 's/[\\|&]/\\&/g'; }
-# nr_set <key regex> <line>: replace the key's lines, or append one when the ini has none.
+# nr_set <key regex> <line>: replace the key's lines (PHP allows leading blanks), or append one when the ini has none.
 nr_set() {
     local last
-    last=$(grep "^$1[[:space:]]*=" "$nr_ini" | tail -n 1)
+    last=$(grep "^[[:space:]]*$1[[:space:]]*=" "$nr_ini" | tail -n 1)
     if [[ -n "$last" ]]; then
         # PHP uses the last assignment, so only that one decides whether to write.
         [[ "$last" == "$2" ]] && return
-        sed -i --follow-symlinks "s|^$1[[:space:]]*=.*|$(nr_sed_escape "$2")|" "$nr_ini"
+        sed -i --follow-symlinks "s|^[[:space:]]*$1[[:space:]]*=.*|$(nr_sed_escape "$2")|" "$nr_ini"
     else
         if [[ -s "$nr_ini" && -n "$(tail -c 1 "$nr_ini")" ]]; then
             printf '\n' >> "$nr_ini" || return
@@ -23,8 +23,8 @@ nr_set() {
 }
 # The app name is set only over the image's placeholder or when missing, so a name set by hand stays.
 nr_set_appname() {
-    local last placeholder='^newrelic\.appname[[:space:]]*=[[:space:]]*"?PHP Application"?[[:space:]]*$'
-    last=$(grep "^newrelic\.appname[[:space:]]*=" "$nr_ini" | tail -n 1)
+    local last placeholder='^[[:space:]]*newrelic\.appname[[:space:]]*=[[:space:]]*"?PHP Application"?[[:space:]]*$'
+    last=$(grep "^[[:space:]]*newrelic\.appname[[:space:]]*=" "$nr_ini" | tail -n 1)
     [[ -z "$last" || "$last" =~ $placeholder ]] || return 0
     nr_set 'newrelic\.appname' "newrelic.appname = \"$NEWRELIC_APPNAME\""
 }
