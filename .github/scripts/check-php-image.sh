@@ -102,7 +102,8 @@ inode=$(stat -c %i "$ini"); check "restart" "$app1"
 [ "$(stat -c %i "$ini")" = "$inode" ] || echo "a restart with the same values rewrote $ini"
 NEWRELIC_LICENSE_KEY="ci/key&2|0123456789abcdef0123456789abcde"; check "key change" "$app1"
 NEWRELIC_APPNAME=$app2; check "app name already set" "$app1"
-cp "$ini" /tmp/nr.ini; out=$(NEWRELIC_APPNAME="ci\"app" start true 2>&1)
+cp "$ini" /tmp/nr.ini
+out=$(NEWRELIC_APPNAME="ci\"app" start true 2>&1) || echo "a value with a quote stopped the entrypoint: $out"
 cmp -s /tmp/nr.ini "$ini" || echo "a value with a quote changed $ini"
 [ -n "$out" ] || echo "a value with a quote was refused silently"
 rm "$ini"; check "missing newrelic.ini" "$app2"
