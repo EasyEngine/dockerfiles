@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['8.1', '8.2', '8.3', '8.4', '8.5']
+        php: ['8.1', '8.2', '8.3', '8.4', '8.5', '8.6']
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -48,12 +48,16 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # Built on PRs and tags alike, so a broken image is caught before the push step.
       - name: Build PHP - ${{ matrix.php }} image
         uses: docker/build-push-action@v7
-        if: github.event_name == 'pull_request'
         with:
           context: php/${{ matrix.php }}
+          load: true
           tags: easyengine/php${{ steps.img-tag.outputs.tag }}:test
+
+      - name: Check PHP - ${{ matrix.php }} modules and startup
+        run: .github/scripts/check-php-image.sh easyengine/php${{ steps.img-tag.outputs.tag }}:test php/${{ matrix.php }}/expected-modules.txt
 
       - name: Build and push PHP - ${{ matrix.php }} image
         uses: docker/build-push-action@v7
@@ -70,7 +74,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon']
+        others: ['nginx', 'nginx-proxy', 'postfix', 'redis', 'cron', 'mailhog', 'mariadb', 'newrelic-daemon', 'compat-scanner']
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -97,7 +101,12 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           context: ${{ matrix.others }}
+          load: ${{ matrix.others == 'compat-scanner' }}
           tags: easyengine/${{ matrix.others }}:test
+
+      - name: Test compat-scanner image
+        if: github.event_name == 'pull_request' && matrix.others == 'compat-scanner'
+        run: bash compat-scanner/tests/run.sh easyengine/compat-scanner:test
 
       - name: Build and push ${{ matrix.others }} image
         uses: docker/build-push-action@v7
