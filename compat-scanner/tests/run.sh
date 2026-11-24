@@ -183,6 +183,22 @@ scan wide-cap "$WORK/wide" wp /var/www/htdocs 8.4 600 -e COMPAT_REPORT_MAX=10000
 estimate est-timeout "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1
 estimate badver "$WORK/wp" wp /var/www/htdocs/current $'8.4\n'
 
+# Scope: everything in the WordPress directory but core; php code beside htdocs; roots behind bad links.
+wpscope_fixture "$WORK/wpscope"
+wpmoved_fixture "$WORK/wpmoved"
+badlink_fixture "$WORK/wplink-dangling" wp /var/www/nowhere
+badlink_fixture "$WORK/wplink-out" wp /etc
+badlink_fixture "$WORK/phplink-dangling" php /var/www/nowhere
+phpbeside_fixture "$WORK/phpbeside"
+scan wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4 600
+estimate est-wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4
+scan wpmoved "$WORK/wpmoved" wp /var/www/htdocs 8.4 600
+scan wplink-dangling "$WORK/wplink-dangling" wp /var/www/htdocs 8.4 600
+scan wplink-out "$WORK/wplink-out" wp /var/www/htdocs 8.4 600
+scan phplink-dangling "$WORK/phplink-dangling" php /var/www/htdocs 8.4 600
+scan phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4 600
+estimate est-phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4
+
 # A full /out: a tool_error, not a quietly incomplete result.
 rc=0
 docker run --rm --init --network none --read-only --tmpfs /tmp:size=64m \

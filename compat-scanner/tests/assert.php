@@ -381,6 +381,63 @@ check( 0 === strpos( $msg, 'Global with variable variables' ) && 65539 === strle
 tool_error( 'est-inf', 'bad arguments: COMPAT_SECONDS_PER_BATCH must be a finite', 2, false );
 tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1', 2, false );
 
+// ------------------------------------------------------------------ scope
+
+$ws = out( 'wpscope' );
+$wr = report( 'wpscope' );
+eq( [ $ws['status'] ?? null, field( $ws, 'safe_to_upgrade' ), $ws['errors'] ?? null, $ws['files_checked'] ?? null, $ws['files_not_checked'] ?? null ], [ 'ok', false, 10, 10, 0 ], 'wpscope: everything but core checked' );
+eq(
+	comp_rows( $wr ),
+	[
+		[ 'plugin', 'plug-in', null, 'Plug In', null, 1, 1, 0 ],
+		[ 'plugin', 'plug-v', null, 'Plug V', null, 1, 1, 0 ],
+		[ 'plugin', 'moved', 'htdocs/content', 'Moved', null, 1, 1, 0 ],
+		[ 'theme', 'theme-in', null, 'Theme In', null, 1, 1, 0 ],
+		[ 'mu-plugin', 'mu-plugins', null, null, null, 1, 1, 0 ],
+		[ 'directory', 'htdocs', null, null, null, 1, 1, 0 ],
+		[ 'directory', 'htdocs/forum', null, null, null, 1, 1, 0 ],
+		[ 'directory', 'htdocs/shared', null, null, null, 1, 1, 0 ],
+		[ 'directory', 'htdocs/wp', null, null, null, 1, 1, 0 ],
+		[ 'other', '', 'htdocs/content', null, null, 1, 1, 0 ],
+	],
+	'wpscope: links into the WordPress dir keep their component; a content dir beside wp-content is a branch; the rest are directories; core never'
+);
+$ff = [];
+foreach ( $wr['components'] ?? [] as $c ) {
+	foreach ( $c['findings'] as $f ) {
+		$ff[] = $c['slug'] . ':' . $f['file'];
+	}
+}
+sort( $ff );
+eq( $ff, [ ':object-cache.php', 'htdocs/forum:index.php', 'htdocs/shared:loose.php', 'htdocs/wp:wp-content/plugins/stock/stock.php', 'htdocs:custom-api.php', 'moved:moved.php', 'mu-plugins:mu-link.php', 'plug-in:plug-in.php', 'plug-v:plug-v.php', 'theme-in:functions.php' ], 'wpscope: finding files (core, links to core and the content dir\'s uploads absent)' );
+$e = out( 'est-wpscope' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 10, $ws['php_bytes'] ?? null, 10 ], 'est-wpscope: counts equal the scan' );
+
+$wm = out( 'wpmoved' );
+eq( [ $wm['status'] ?? null, field( $wm, 'safe_to_upgrade' ), $wm['errors'] ?? null, $wm['files_checked'] ?? null ], [ 'ok', false, 1, 2 ], 'wpmoved: no wp-content, a moved content dir is still checked' );
+eq( comp_rows( report( 'wpmoved' ) ), [ [ 'plugin', 'p', 'htdocs/app', 'P', null, 1, 1, 0 ], [ 'other', 'wp-config.php', null, null, null, 1, 0, 0 ] ], 'wpmoved: plugin of branch htdocs/app, and wp-config.php' );
+
+foreach ( [ 'wplink-dangling', 'wplink-out', 'phplink-dangling' ] as $name ) {
+	$d = out( $name );
+	eq( [ $d['status'] ?? null, field( $d, 'safe_to_upgrade' ), $d['files_checked'] ?? null, $d['files_not_checked'] ?? null ], [ 'ok', null, 0, 1 ], "$name: a root behind a bad link is not no_code_found" );
+	eq( report( $name )['not_checked'] ?? null, [ [ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => './', 'reason' => 'unreadable' ] ], "$name: the root is unreadable" );
+}
+
+$pb = out( 'phpbeside' );
+eq( [ $pb['status'] ?? null, field( $pb, 'safe_to_upgrade' ), $pb['errors'] ?? null, $pb['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpbeside: code beside htdocs checked, tool caches not' );
+eq(
+	comp_rows( report( 'phpbeside' ) ),
+	[
+		[ 'directory', '..', null, null, null, 1, 1, 0 ],
+		[ 'directory', '../app', null, null, null, 1, 1, 0 ],
+		[ 'other', '', null, null, null, 1, 0, 0 ],
+	],
+	'phpbeside: components (htdocs -> app/public listed once, as htdocs)'
+);
+eq( array_column( comp_of( report( 'phpbeside' ), 'directory', '../app' )['findings'] ?? [], 'file' ), [ 'src/boot.php' ], 'phpbeside: ../app finding path' );
+$e = out( 'est-phpbeside' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 3, 3 ], 'est-phpbeside: counts equal the scan' );
+
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
 eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
 eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mount is read-only inside the container' );

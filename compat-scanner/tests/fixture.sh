@@ -295,3 +295,85 @@ bigmsg_fixture() {
 	printf "<?php\nfunction f() {\n\tglobal \$\$x['%s'];\n}\n" "$(head -c 1100000 /dev/zero | tr '\0' a)" > "$p/big.php"
 	chmod -R a+rX "$1"
 }
+
+# wpscope_fixture <app-dir>: WordPress at htdocs with code outside wp-content. Everything but core is scanned:
+# links into the WordPress directory, custom endpoints, a second app, a content dir beside wp-content, a subdirectory install.
+wpscope_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	# Core, here and in a subdirectory install: never scanned.
+	php_file "$h/wp-settings.php" 'each( $a );'
+	php_file "$h/wp-includes/version.php" 'each( $a );'
+	php_file "$h/wp-admin/admin.php" 'each( $a );'
+	php_file "$h/index.php" 'each( $a );'
+	php_file "$h/xmlrpc.php" 'each( $a );'
+	php_file "$h/wp/wp-settings.php" 'each( $a );'
+	php_file "$h/wp/wp-includes/load.php" 'each( $a );'
+	php_file "$h/wp/wp-load.php" 'each( $a );'
+	php_file "$h/wp/wp-content/plugins/stock/stock.php" 'each( $a );'
+	# Code that isn't core: a custom endpoint and a second app.
+	php_file "$h/custom-api.php" 'each( $a );'
+	php_file "$h/forum/index.php" 'each( $a );'
+	# A plugin, a theme and an mu-plugin linked from elsewhere in the WordPress directory keep their component.
+	php_file "$h/shared/plug-in/plug-in.php" "/* Plugin Name: Plug In */
+each( \$a );"
+	mkdir -p "$h/shared/theme-in"
+	printf '/*\nTheme Name: Theme In\n*/\n' > "$h/shared/theme-in/style.css"
+	php_file "$h/shared/theme-in/functions.php" 'each( $a );'
+	php_file "$h/shared/mu-link.php" 'each( $a );'
+	php_file "$h/shared/loose.php" 'each( $a );'
+	php_file "$h/vendor/acme/plug-v/plug-v.php" "/* Plugin Name: Plug V */
+each( \$a );"
+	mkdir -p "$wc/plugins" "$wc/themes" "$wc/mu-plugins"
+	ln -s ../../shared/plug-in "$wc/plugins/plug-in"
+	ln -s ../../vendor/acme/plug-v "$wc/plugins/plug-v"
+	ln -s ../../shared/theme-in "$wc/themes/theme-in"
+	ln -s ../../shared/mu-link.php "$wc/mu-plugins/mu-link.php"
+	# Links to core stay out.
+	ln -s ../wp-includes "$wc/inc"
+	ln -s ../wp/wp-load.php "$wc/load.php"
+	# A content dir beside wp-content (moved WP_CONTENT_DIR): a branch root with its own top-level skips.
+	php_file "$h/content/plugins/moved/moved.php" "/* Plugin Name: Moved */
+each( \$a );"
+	php_file "$h/content/uploads/up.php" 'each( $a );'
+	php_file "$h/content/object-cache.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# wpmoved_fixture <app-dir>: no wp-content; WP_CONTENT_DIR is htdocs/app.
+wpmoved_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/wp-settings.php" 'each( $a );'
+	mkdir -p "$h/wp-includes"
+	php_file "$h/app/plugins/p/p.php" "/* Plugin Name: P */
+each( \$a );"
+	php_file "$1/wp-config.php" "define( 'WP_CONTENT_DIR', __DIR__ . '/htdocs/app' );"
+	chmod -R a+rX "$1"
+}
+
+# badlink_fixture <app-dir> <wp|php> <target>: wp-content (wp) or htdocs (php) is a link that dangles or leaves the mount.
+badlink_fixture() {
+	local app=$1 type=$2 target=$3
+	mkdir -p "$app/htdocs"
+	if [ "$type" = wp ]; then
+		php_file "$app/htdocs/wp-settings.php"
+		mkdir -p "$app/htdocs/wp-includes"
+		ln -s "$target" "$app/htdocs/wp-content"
+	else
+		rmdir "$app/htdocs"
+		ln -s "$target" "$app/htdocs"
+	fi
+	chmod -R a+rX "$app"
+}
+
+# phpbeside_fixture <app-dir>: a php site whose htdocs links to app/public, with the app's code beside it in /var/www.
+phpbeside_fixture() {
+	local a=$1
+	php_file "$a/app/public/index.php" 'require "../src/boot.php";'
+	php_file "$a/app/src/boot.php" 'each( $a );'
+	php_file "$a/lib.php" '$h = create_function( "", "" );'
+	# The www-data user's home: tool caches, not site code.
+	php_file "$a/.composer/vendor/x/y.php" 'each( $a );'
+	php_file "$a/.wp-cli/packages/z.php" 'each( $a );'
+	ln -s app/public "$a/htdocs"
+	chmod -R a+rX "$a"
+}
