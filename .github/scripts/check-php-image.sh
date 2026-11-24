@@ -73,6 +73,48 @@ elif bad=$(grep -v '^ok ' <<<"$versions"); then
 	errors+=("extensions without a real version: ${bad//$'\n'/, }")
 fi
 
+# 5. Imagick must encode AVIF (WordPress's AVIF uploads need libheif's encoder plugin) and read it back.
+avif_php='try {
+	$i = new Imagick(); $i->newImage(64, 64, new ImagickPixel("red")); $i->setImageFormat("avif");
+	$b = $i->getImageBlob();
+	if (substr($b, 4, 8) !== "ftypavif") { echo "not an AVIF file: ", bin2hex(substr($b, 0, 16)); exit(1); }
+	$r = new Imagick(); $r->readImageBlob($b);
+	if ($r->getImageWidth() !== 64) { echo "read back ", $r->getImageFormat(), " ", $r->getImageWidth(), "px"; exit(1); }
+} catch (Throwable $e) { echo get_class($e), ": ", $e->getMessage(); exit(1); }'
+avif=$(docker run --rm --pull=never --entrypoint php "$image" -r "$avif_php" 2>&1) || errors+=("AVIF encode failed: $avif")
+
+# 6. The entrypoint's New Relic setup, run as www-data on a www-data owned conf.d (as `ee site enable` leaves it):
+# values with sed metacharacters, a restart with the same values, a changed key and app name, a refused value, a missing ini.
+nr_check='
+ini=/usr/local/etc/php/conf.d/newrelic.ini
+start() { setpriv --reuid=www-data --regid=www-data --init-groups docker-entrypoint.sh "$@"; }
+start php -m | grep -qx newrelic || { echo skipped; exit 0; }
+[ -f /data/newrelic.ini ] || echo "/data/newrelic.ini is missing"
+chown -R www-data: /usr/local/etc/php/conf.d
+check() {
+	out=$(start php -r "echo ini_get(\"newrelic.license\") === getenv(\"NEWRELIC_LICENSE_KEY\") && ini_get(\"newrelic.appname\") === getenv(\"NEWRELIC_APPNAME\") ? \"ok\" : \"PHP reads \" . var_export(ini_get(\"newrelic.license\"), true) . \" / \" . var_export(ini_get(\"newrelic.appname\"), true);" 2>&1)
+	[ "$out" = ok ] || echo "$1: $out"
+}
+# 40 characters: the agent ignores a license of any other length.
+export NEWRELIC_LICENSE_KEY="ci/key&1|0123456789abcdef0123456789abcde" NEWRELIC_APPNAME="ci & co/app|1"
+check "first start"
+inode=$(stat -c %i "$ini"); check "restart"
+[ "$(stat -c %i "$ini")" = "$inode" ] || echo "a restart with the same values rewrote $ini"
+NEWRELIC_LICENSE_KEY="ci/key&2|0123456789abcdef0123456789abcde"; check "key change"
+NEWRELIC_APPNAME="ci & co/app|2"; check "app name change"
+cp "$ini" /tmp/nr.ini; out=$(NEWRELIC_APPNAME="ci\"app" start true 2>&1)
+cmp -s /tmp/nr.ini "$ini" || echo "a value with a quote changed $ini"
+[ -n "$out" ] || echo "a value with a quote was refused silently"
+rm "$ini"; check "missing newrelic.ini"
+fpm=$(start php-fpm -t 2>&1) || echo "php-fpm -t failed: $fpm"
+grep -Ei "warning|unable to load" <<<"$fpm" || true
+'
+if ! nr=$(docker run --rm --pull=never --user root --entrypoint bash "$image" -c "$nr_check" 2>&1); then
+	errors+=("New Relic entrypoint check failed to run: $nr")
+elif [ -n "$nr" ] && [ "$nr" != skipped ]; then
+	errors+=("New Relic entrypoint check: $nr")
+fi
+
 if [ ${#errors[@]} -gt 0 ]; then
 	for e in "${errors[@]}"; do
 		# Keep multi-line details inside one annotation.
@@ -81,7 +123,7 @@ if [ ${#errors[@]} -gt 0 ]; then
 	done
 	exit 1
 fi
-echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini, every extension reports a version."
+echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini, every extension reports a version, Imagick encodes AVIF, New Relic entrypoint ok (or no New Relic)."
 # Third-party versions (those that differ from PHP's own) for the build log.
 php_version=$(docker run --rm --pull=never --entrypoint php "$image" -r 'echo PHP_VERSION;' 2>/dev/null)
 echo "$image: PHP $php_version; $(sed -n "s/^ok \([^=]*\)='\(.*\)'$/\1 \2/p" <<<"$versions" | grep -v " $php_version\$" | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
