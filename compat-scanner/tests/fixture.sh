@@ -295,3 +295,170 @@ bigmsg_fixture() {
 	printf "<?php\nfunction f() {\n\tglobal \$\$x['%s'];\n}\n" "$(head -c 1100000 /dev/zero | tr '\0' a)" > "$p/big.php"
 	chmod -R a+rX "$1"
 }
+
+# wpscope_fixture <app-dir>: WordPress at htdocs with code outside wp-content. Everything but core is scanned:
+# links into the WordPress directory, custom endpoints, a second app, a content dir beside wp-content, a subdirectory install.
+wpscope_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	# Core, here and in a subdirectory install: never scanned.
+	php_file "$h/wp-settings.php" 'each( $a );'
+	php_file "$h/wp-includes/version.php" 'each( $a );'
+	php_file "$h/wp-admin/admin.php" 'each( $a );'
+	php_file "$h/index.php" 'each( $a );'
+	php_file "$h/xmlrpc.php" 'each( $a );'
+	php_file "$h/wp/wp-settings.php" 'each( $a );'
+	php_file "$h/wp/wp-includes/load.php" 'each( $a );'
+	php_file "$h/wp/wp-load.php" 'each( $a );'
+	php_file "$h/wp/wp-content/plugins/stock/stock.php" 'each( $a );'
+	# Code that isn't core: a custom endpoint and a second app.
+	php_file "$h/custom-api.php" 'each( $a );'
+	php_file "$h/forum/index.php" 'each( $a );'
+	# A plugin, a theme and an mu-plugin linked from elsewhere in the WordPress directory keep their component.
+	php_file "$h/shared/plug-in/plug-in.php" "/* Plugin Name: Plug In */
+each( \$a );"
+	mkdir -p "$h/shared/theme-in"
+	printf '/*\nTheme Name: Theme In\n*/\n' > "$h/shared/theme-in/style.css"
+	php_file "$h/shared/theme-in/functions.php" 'each( $a );'
+	php_file "$h/shared/mu-link.php" 'each( $a );'
+	php_file "$h/shared/loose.php" 'each( $a );'
+	php_file "$h/vendor/acme/plug-v/plug-v.php" "/* Plugin Name: Plug V */
+each( \$a );"
+	mkdir -p "$wc/plugins" "$wc/themes" "$wc/mu-plugins"
+	ln -s ../../shared/plug-in "$wc/plugins/plug-in"
+	ln -s ../../vendor/acme/plug-v "$wc/plugins/plug-v"
+	ln -s ../../shared/theme-in "$wc/themes/theme-in"
+	ln -s ../../shared/mu-link.php "$wc/mu-plugins/mu-link.php"
+	# Links to core stay out.
+	ln -s ../wp-includes "$wc/inc"
+	ln -s ../wp/wp-load.php "$wc/load.php"
+	ln -s ../wp-includes/version.php "$wc/core-version.php"
+	ln -s ../../wp/wp-includes "$wc/mu-plugins/inc"
+	# A version.php outside core is code.
+	php_file "$h/forum/inc/version.php" 'each( $a );'
+	# A content dir beside wp-content (moved WP_CONTENT_DIR): a branch root with its own top-level skips.
+	php_file "$h/content/plugins/moved/moved.php" "/* Plugin Name: Moved */
+each( \$a );"
+	php_file "$h/content/uploads/up.php" 'each( $a );'
+	php_file "$h/content/object-cache.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# wpmoved_fixture <app-dir>: no wp-content; WP_CONTENT_DIR is htdocs/app.
+wpmoved_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/wp-settings.php" 'each( $a );'
+	mkdir -p "$h/wp-includes"
+	php_file "$h/app/plugins/p/p.php" "/* Plugin Name: P */
+each( \$a );"
+	php_file "$1/wp-config.php" "define( 'WP_CONTENT_DIR', __DIR__ . '/htdocs/app' );"
+	chmod -R a+rX "$1"
+}
+
+# badlink_fixture <app-dir> <wp|php> <target>: wp-content (wp) or htdocs (php) is a link that dangles or leaves the mount.
+badlink_fixture() {
+	local app=$1 type=$2 target=$3
+	mkdir -p "$app/htdocs"
+	if [ "$type" = wp ]; then
+		php_file "$app/htdocs/wp-settings.php"
+		mkdir -p "$app/htdocs/wp-includes"
+		ln -s "$target" "$app/htdocs/wp-content"
+	else
+		rmdir "$app/htdocs"
+		ln -s "$target" "$app/htdocs"
+	fi
+	chmod -R a+rX "$app"
+}
+
+# phpbeside_fixture <app-dir>: a php site whose htdocs links to app/public, with the app's code beside it in /var/www.
+phpbeside_fixture() {
+	local a=$1
+	php_file "$a/app/public/index.php" 'require "../src/boot.php";'
+	php_file "$a/app/src/boot.php" 'each( $a );'
+	php_file "$a/lib.php" '$h = create_function( "", "" );'
+	# The www-data user's home: tool caches, not site code.
+	php_file "$a/.composer/vendor/x/y.php" 'each( $a );'
+	php_file "$a/.wp-cli/packages/z.php" 'each( $a );'
+	ln -s app/public "$a/htdocs"
+	chmod -R a+rX "$a"
+}
+
+# bedrock_fixture <app-dir>: Bedrock in htdocs (config/ and vendor/ beside web/, content in web/app, core in web/wp).
+bedrock_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/config/application.php" "Config::define( 'WP_CONTENT_DIR', \$webroot_dir . '/app' );
+each( \$a );"
+	php_file "$h/vendor/acme/lib/Lib.php" 'each( $a );'
+	php_file "$h/web/index.php" "require __DIR__ . '/wp/wp-blog-header.php';"
+	php_file "$h/web/wp-config.php" "require dirname( __DIR__ ) . '/config/application.php';"
+	php_file "$h/web/app/plugins/p/p.php" "/* Plugin Name: P */
+each( \$a );"
+	php_file "$h/web/app/mu-plugins/m.php" 'each( $a );'
+	php_file "$h/web/app/uploads/u.php" 'each( $a );'
+	php_file "$h/web/wp/wp-settings.php" 'each( $a );'
+	php_file "$h/web/wp/wp-load.php" 'each( $a );'
+	php_file "$h/web/wp/wp-includes/x.php" 'each( $a );'
+	php_file "$h/web/wp/wp-admin/y.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# ext_fixture <app-dir>: a wp site with PHP code in other extensions and in upper/mixed-case names.
+ext_fixture() {
+	local wc="$1/htdocs/wp-content" f
+	php_file "$wc/plugins/ext/ext.php" '/* Plugin Name: Ext */'
+	for f in x.inc x.phtml x.module x.install x.theme x.engine x.php5 x.php7 UPPER.PHP Mixed.Inc; do
+		php_file "$wc/plugins/ext/$f" 'each( $a );'
+	done
+	# Not code: never listed.
+	for f in readme.txt x.phps x.js; do php_file "$wc/plugins/ext/$f" 'each( $a );'; done
+	ln -s nowhere.inc "$wc/plugins/ext/gone.inc"
+
+	# Only a lowercase .php file is a single-file plugin or a header candidate, as in WordPress.
+	php_file "$wc/plugins/legacy.inc" '/* Plugin Name: Not A Plugin */
+each( $a );'
+	php_file "$wc/plugins/Loose.PHP" '/* Plugin Name: Not A Plugin Either */
+each( $a );'
+	ln -s nowhere.inc "$wc/plugins/gone.inc"
+	php_file "$wc/plugins/hdr/main.inc" '/* Plugin Name: Wrong */'
+	php_file "$wc/plugins/hdr/MAIN.PHP" '/* Plugin Name: Wrong Too */'
+
+	# One file under two code names: the first in sorted order wins. A code name linking to a non-code file is checked under the link name.
+	php_file "$wc/plugins/dedup/dedup.php" '/* Plugin Name: Dedup */'
+	php_file "$wc/plugins/dedup/a.inc" 'each( $a );'
+	ln -s a.inc "$wc/plugins/dedup/z.php"
+	php_file "$wc/plugins/dedup/data.txt" 'each( $a );'
+	ln -s data.txt "$wc/plugins/dedup/b.inc"
+
+	mkdir -p "$wc/themes"
+	ln -s nowhere.inc "$wc/themes/gone.inc"
+	chmod -R a+rX "$1"
+}
+
+# ext_php_fixture <app-dir>: a php site with code only in non-.php names.
+ext_php_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/x.inc" 'each( $a );'
+	php_file "$h/app/Y.PHTML" 'each( $a );'
+	php_file "$h/app/readme.txt" 'each( $a );'
+	mkdir -p "$h" && ln -s nowhere.inc "$h/gone.inc"
+	chmod -R a+rX "$1"
+}
+
+# tempbackup_fixture <app-dir>: a clean plugin beside WordPress' rollback copies in wp-content/upgrade-temp-backup/.
+tempbackup_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	php_file "$wc/upgrade-temp-backup/plugins/old/old.php" '/* Plugin Name: Old */
+each( $a );'
+	php_file "$wc/upgrade-temp-backup/themes/oldt/functions.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# phpdeep_fixture <app-dir>: htdocs links two levels into the app beside it (project/app/public).
+phpdeep_fixture() {
+	local a=$1
+	php_file "$a/project/app/public/index.php" 'require "../src/boot.php";'
+	php_file "$a/project/app/src/boot.php" 'each( $a );'
+	php_file "$a/project/lib/x.php" 'each( $a );'
+	ln -s project/app/public "$a/htdocs"
+	chmod -R a+rX "$a"
+}

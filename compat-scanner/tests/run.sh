@@ -91,7 +91,7 @@ during() {
 }
 
 switch_release() { ln -sfn releases/B "$1/htdocs/current.new" && mv -T "$1/htdocs/current.new" "$1/htdocs/current"; }
-grow_file() { echo '// more' >> "$1"; }
+grow_file() { echo 'each( $a );' >> "$1"; }
 
 # estimate <name> <app> <type> <path> <version> [docker args...]
 estimate() {
@@ -150,13 +150,14 @@ scan php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4 600
 estimate est-php-rel "$WORK/php-rel" php /var/www/htdocs/current/public 8.4
 scan php-rel-link "$WORK/php-rel-link" php /var/www/htdocs/current/public 8.4 600
 
-# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: unreadable.
+# A deploy re-points current mid-scan: no verdict. A file that grows before its batch: checked as it is now.
 during switch switch_release "$WORK/switch"
 scan switch "$WORK/switch" php /var/www/htdocs/current/public 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
 during changed grow_file "$WORK/changed/htdocs/wp-content/plugins/p/z.php"
 scan changed "$WORK/changed" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
+stat -c %s "$WORK/changed/htdocs/wp-content/plugins/p/"*.php | awk '{ s += $1 } END { print s }' > "$RES/changed.bytes"
 # A root uid 33 can't reach isn't no_code_found; a report that can't be published is a tool_error.
 scan rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4 600
 estimate est-rootlock "$WORK/rootlock" wp /var/www/htdocs 8.4
@@ -183,6 +184,27 @@ scan wide-cap "$WORK/wide" wp /var/www/htdocs 8.4 600 -e COMPAT_REPORT_MAX=10000
 estimate est-timeout "$WORK/wp" wp /var/www/htdocs/current 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1
 estimate badver "$WORK/wp" wp /var/www/htdocs/current $'8.4\n'
 
+# Scope: everything in the WordPress directory but core; php code beside htdocs; roots behind bad links.
+wpscope_fixture "$WORK/wpscope"
+wpmoved_fixture "$WORK/wpmoved"
+badlink_fixture "$WORK/wplink-dangling" wp /var/www/nowhere
+badlink_fixture "$WORK/wplink-out" wp /etc
+badlink_fixture "$WORK/phplink-dangling" php /var/www/nowhere
+phpbeside_fixture "$WORK/phpbeside"
+bedrock_fixture "$WORK/bedrock"
+scan wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4 600
+estimate est-wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4
+scan wpmoved "$WORK/wpmoved" wp /var/www/htdocs 8.4 600
+scan wplink-dangling "$WORK/wplink-dangling" wp /var/www/htdocs 8.4 600
+scan wplink-out "$WORK/wplink-out" wp /var/www/htdocs 8.4 600
+scan phplink-dangling "$WORK/phplink-dangling" php /var/www/htdocs 8.4 600
+scan phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4 600
+phpdeep_fixture "$WORK/phpdeep"
+scan phpdeep "$WORK/phpdeep" php /var/www/htdocs 8.4 600
+estimate est-phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4
+# Bedrock scanned from its project root: config/, vendor/ and web/ but not core.
+scan bedrock "$WORK/bedrock" wp /var/www/htdocs 8.4 600
+
 # A full /out: a tool_error, not a quietly incomplete result.
 rc=0
 docker run --rm --init --network none --read-only --tmpfs /tmp:size=64m \
@@ -204,6 +226,34 @@ for m in rw ro; do
 		--mount "type=bind,src=$(realpath "$WORK/mountprobe"),dst=/var/www$opt" \
 		--entrypoint sh "$IMAGE" -c "touch /var/www/htdocs/x-$m 2>/dev/null && echo writable || echo readonly" > "$RES/mount-$m"
 done
+
+# PHP code in other extensions and upper/mixed-case names; COMPAT_DEBUG=1 shows the batch/STDIN routing.
+ext_fixture "$WORK/ext"
+ext_php_fixture "$WORK/ext-php"
+scan ext "$WORK/ext" wp /var/www/htdocs 8.4 600 -e COMPAT_DEBUG=1
+estimate est-ext "$WORK/ext" wp /var/www/htdocs 8.4
+scan ext-php "$WORK/ext-php" php /var/www/htdocs 8.4 600
+estimate est-ext-php "$WORK/ext-php" php /var/www/htdocs 8.4
+
+# A file deleted before its batch: unreadable.
+changed_fixture "$WORK/changed-gone"
+during changed-gone rm -f "$WORK/changed-gone/htdocs/wp-content/plugins/p/z.php"
+scan changed-gone "$WORK/changed-gone" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
+wait || true
+
+# Repeated slashes in the path (site-command keeps --public-dir=a//b as typed); `..` is still refused.
+scan slashes "$WORK/wp" wp /var/www//htdocs//current/ 8.4 600
+scan php-rel-slashes "$WORK/php-rel" php /var/www/htdocs//current//public 8.4 600
+estimate est-slashes "$WORK/wp" wp //var/www/htdocs//current 8.4
+scan badargs-dotdot "$WORK/wp" wp /var/www/../etc 8.4 600
+scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
+
+# WordPress' rollback copies in wp-content/upgrade-temp-backup/ aren't live code.
+tempbackup_fixture "$WORK/tempbackup"
+scan tempbackup "$WORK/tempbackup" wp /var/www/htdocs 8.4 600
+
+# An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
+estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
 
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
