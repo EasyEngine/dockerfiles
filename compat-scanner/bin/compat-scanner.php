@@ -36,6 +36,8 @@ const FSIZE_SLACK     = 2097152;
 const HEADER_MAX      = 6144;
 const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
+// File extensions checked as PHP code, matched case-insensitively.
+const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', 'engine', 'php5', 'php7' ];
 
 class TimedOut extends RuntimeException {
 }
@@ -504,6 +506,11 @@ final class Scanner {
 				continue;
 			}
 
+			// Only a lowercase .php file can be a single-file plugin, as in WordPress.
+			if ( $this->isPhpName( $name ) && ! $this->isPluginName( $name ) ) {
+				$loose[] = $name;
+				continue;
+			}
 			if ( null !== $real && ! $this->isPhpName( $name ) ) {
 				continue;
 			}
@@ -720,8 +727,19 @@ final class Scanner {
 		return ! preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name );
 	}
 
+	/** PHP code: a name ending in one of CODE_EXTENSIONS, in any case. */
 	private function isPhpName( string $name ): bool {
+		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/i', $name );
+	}
+
+	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
+	private function isPluginName( string $name ): bool {
 		return '.php' === substr( $name, -4 );
+	}
+
+	/** Whether PHPCS takes the file by its extension, which it matches case-sensitively. */
+	private function phpcsTakes( string $path ): bool {
+		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/', $path );
 	}
 
 	private function inside( string $real ): bool {
@@ -851,7 +869,7 @@ final class Scanner {
 		} else {
 			$candidates = [];
 			foreach ( (array) $this->readDir( $header['at'] ) as $n ) {
-				if ( $this->isPhpName( $n ) ) {
+				if ( $this->isPluginName( $n ) ) {
 					$candidates[] = $header['at'] . '/' . $n;
 				}
 			}
@@ -996,8 +1014,8 @@ final class Scanner {
 			}
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
-			// file whose real name doesn't end in .php: such files go through STDIN.
-			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->isPhpName( $real );
+			// file whose real name has no --extensions match: such files go through STDIN.
+			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->phpcsTakes( $real );
 			if ( ! $batch[ $k ]['stdin'] ) {
 				$plain[ $real ] = $k;
 			}
@@ -1356,7 +1374,7 @@ final class Scanner {
 			PHPCS_BIN,
 			'--standard=' . ( 'php' === $this->cfg['site_type'] ? 'PHPCompatibility' : 'PHPCompatibilityWP' ),
 			'--runtime-set', 'testVersion', $this->cfg['version'],
-			'--extensions=php', '--no-cache', '-q', '--no-colors', '--ignore-annotations',
+			'--extensions=' . implode( ',', CODE_EXTENSIONS ), '--no-cache', '-q', '--no-colors', '--ignore-annotations',
 			'--report=' . REPORT_CLASS, '--report-file=' . $report,
 		];
 
@@ -1367,8 +1385,8 @@ final class Scanner {
 				$res['unreadable'] = true;
 				return $res;
 			}
-			// PHPCS resolves --stdin-path and filters it by extension, so it must end in .php.
-			$cmd[] = '--stdin-path=' . $paths[0] . ( $this->isPhpName( $paths[0] ) ? '' : '.php' );
+			// PHPCS resolves --stdin-path and filters it by extension, so it must end in one it takes.
+			$cmd[] = '--stdin-path=' . $paths[0] . ( $this->phpcsTakes( $paths[0] ) ? '' : '.php' );
 			$cmd[] = '-';
 		} else {
 			$list = $this->work . '/phpcs.list';
