@@ -295,3 +295,45 @@ bigmsg_fixture() {
 	printf "<?php\nfunction f() {\n\tglobal \$\$x['%s'];\n}\n" "$(head -c 1100000 /dev/zero | tr '\0' a)" > "$p/big.php"
 	chmod -R a+rX "$1"
 }
+
+# ext_fixture <app-dir>: a wp site with PHP code in other extensions and in upper/mixed-case names.
+ext_fixture() {
+	local wc="$1/htdocs/wp-content" f
+	php_file "$wc/plugins/ext/ext.php" '/* Plugin Name: Ext */'
+	for f in x.inc x.phtml x.module x.install x.theme x.engine x.php5 x.php7 UPPER.PHP Mixed.Inc; do
+		php_file "$wc/plugins/ext/$f" 'each( $a );'
+	done
+	# Not code: never listed.
+	for f in readme.txt x.phps x.js; do php_file "$wc/plugins/ext/$f" 'each( $a );'; done
+	ln -s nowhere.inc "$wc/plugins/ext/gone.inc"
+
+	# Only a lowercase .php file is a single-file plugin or a header candidate, as in WordPress.
+	php_file "$wc/plugins/legacy.inc" '/* Plugin Name: Not A Plugin */
+each( $a );'
+	php_file "$wc/plugins/Loose.PHP" '/* Plugin Name: Not A Plugin Either */
+each( $a );'
+	ln -s nowhere.inc "$wc/plugins/gone.inc"
+	php_file "$wc/plugins/hdr/main.inc" '/* Plugin Name: Wrong */'
+	php_file "$wc/plugins/hdr/MAIN.PHP" '/* Plugin Name: Wrong Too */'
+
+	# One file under two code names: the first in sorted order wins. A code name linking to a non-code file is checked under the link name.
+	php_file "$wc/plugins/dedup/dedup.php" '/* Plugin Name: Dedup */'
+	php_file "$wc/plugins/dedup/a.inc" 'each( $a );'
+	ln -s a.inc "$wc/plugins/dedup/z.php"
+	php_file "$wc/plugins/dedup/data.txt" 'each( $a );'
+	ln -s data.txt "$wc/plugins/dedup/b.inc"
+
+	mkdir -p "$wc/themes"
+	ln -s nowhere.inc "$wc/themes/gone.inc"
+	chmod -R a+rX "$1"
+}
+
+# ext_php_fixture <app-dir>: a php site with code only in non-.php names.
+ext_php_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/x.inc" 'each( $a );'
+	php_file "$h/app/Y.PHTML" 'each( $a );'
+	php_file "$h/app/readme.txt" 'each( $a );'
+	mkdir -p "$h" && ln -s nowhere.inc "$h/gone.inc"
+	chmod -R a+rX "$1"
+}

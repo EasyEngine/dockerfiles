@@ -205,6 +205,14 @@ for m in rw ro; do
 		--entrypoint sh "$IMAGE" -c "touch /var/www/htdocs/x-$m 2>/dev/null && echo writable || echo readonly" > "$RES/mount-$m"
 done
 
+# PHP code in other extensions and upper/mixed-case names; COMPAT_DEBUG=1 shows the batch/STDIN routing.
+ext_fixture "$WORK/ext"
+ext_php_fixture "$WORK/ext-php"
+scan ext "$WORK/ext" wp /var/www/htdocs 8.4 600 -e COMPAT_DEBUG=1
+estimate est-ext "$WORK/ext" wp /var/www/htdocs 8.4
+scan ext-php "$WORK/ext-php" php /var/www/htdocs 8.4 600
+estimate est-ext-php "$WORK/ext-php" php /var/www/htdocs 8.4
+
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
 	--mount "type=bind,src=$RES,dst=/r,readonly" \

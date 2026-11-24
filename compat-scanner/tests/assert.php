@@ -385,5 +385,69 @@ eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tre
 eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
 eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mount is read-only inside the container' );
 
+// ------------------------------------------------------ code file extensions
+
+$ext = out( 'ext' );
+$r   = report( 'ext' );
+eq( [ $ext['status'] ?? null, field( $ext, 'safe_to_upgrade' ), $ext['errors'] ?? null, $ext['warnings'] ?? null, $ext['files_checked'] ?? null, $ext['files_not_checked'] ?? null, $ext['components_checked'] ?? null, $ext['components_with_errors'] ?? null ], [ 'ok', false, 14, 0, 18, 3, 4, 3 ], 'ext: verdict and counts' );
+eq(
+	comp_rows( $r ),
+	[
+		[ 'plugin', 'ext', null, 'Ext', null, 11, 10, 0 ],
+		[ 'plugin', 'dedup', null, 'Dedup', null, 3, 2, 0 ],
+		[ 'other', '', null, null, null, 2, 2, 0 ],
+		[ 'plugin', 'hdr', null, 'hdr', null, 2, 0, 0 ],
+	],
+	'ext: components (no single-file plugin from legacy.inc or Loose.PHP; hdr has no lowercase .php header file)'
+);
+eq(
+	array_column( comp_of( $r, 'plugin', 'ext' )['findings'] ?? [], 'file' ),
+	[ 'Mixed.Inc', 'UPPER.PHP', 'x.engine', 'x.inc', 'x.install', 'x.module', 'x.php5', 'x.php7', 'x.phtml', 'x.theme' ],
+	'ext: one finding per code extension, in any case, under the real name; readme.txt, x.phps and x.js not listed'
+);
+eq( array_unique( array_column( comp_of( $r, 'plugin', 'ext' )['findings'] ?? [], 'source' ) ), [ 'PHPCompatibility.FunctionUse.RemovedFunctions.eachDeprecatedRemoved' ], 'ext: canaries are the each() error' );
+eq( array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ), [ 'plugins/Loose.PHP', 'plugins/legacy.inc' ], 'ext: loose non-.php code files in plugins/ belong to other' );
+eq( array_column( comp_of( $r, 'plugin', 'dedup' )['findings'] ?? [], 'file' ), [ 'a.inc', 'b.inc' ], 'ext: z.php -> a.inc checked once as a.inc; b.inc -> data.txt checked under the link name' );
+eq(
+	$r['not_checked'] ?? null,
+	[
+		[ 'type' => 'plugin', 'slug' => 'ext', 'branch' => null, 'file' => 'gone.inc', 'reason' => 'unreadable' ],
+		[ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => 'plugins/gone.inc', 'reason' => 'unreadable' ],
+		[ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => 'themes/gone.inc', 'reason' => 'unreadable' ],
+	],
+	'ext: dangling code-named links are unreadable, in plugins/ and themes/ under other'
+);
+$err = raw( 'ext.stderr' );
+preg_match_all( '/\] single (\S+) at /', $err, $m );
+$singles = $m[1];
+sort( $singles );
+check( 1 === preg_match_all( '/\] batch 13 files rc=/', $err ), 'ext: one batch of 13 files (lowercase extensions)' );
+eq(
+	$singles,
+	array_map(
+		static function ( $f ) { return "/var/www/htdocs/wp-content/plugins/$f"; },
+		[ 'Loose.PHP', 'dedup/b.inc', 'ext/Mixed.Inc', 'ext/UPPER.PHP', 'hdr/MAIN.PHP' ]
+	),
+	'ext: names PHPCS filters by extension go through STDIN, once each'
+);
+$e = out( 'est-ext' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ $ext['files_checked'] + $ext['files_not_checked'], $ext['php_bytes'] ?? null, $ext['components_checked'] ?? null ], 'est-ext: counts equal the scan' );
+
+$ep = out( 'ext-php' );
+$r  = report( 'ext-php' );
+eq( [ $ep['status'] ?? null, field( $ep, 'safe_to_upgrade' ), $ep['errors'] ?? null, $ep['files_checked'] ?? null, $ep['files_not_checked'] ?? null ], [ 'ok', false, 2, 2, 1 ], 'ext-php: code only in non-.php names is not no_code_found' );
+eq(
+	comp_rows( $r ),
+	[
+		[ 'directory', 'app', null, null, null, 1, 1, 0 ],
+		[ 'other', '', null, null, null, 1, 1, 0 ],
+	],
+	'ext-php: components'
+);
+eq( [ array_column( comp_of( $r, 'directory', 'app' )['findings'] ?? [], 'file' ), array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ) ], [ [ 'Y.PHTML' ], [ 'x.inc' ] ], 'ext-php: findings by file' );
+eq( $r['not_checked'] ?? null, [ [ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => 'gone.inc', 'reason' => 'unreadable' ] ], 'ext-php: a dangling .inc link in the root is other, not a directory' );
+$e = out( 'est-ext-php' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ $ep['files_checked'] + $ep['files_not_checked'], $ep['php_bytes'] ?? null, $ep['components_checked'] ?? null ], 'est-ext-php: counts equal the scan' );
+
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );
