@@ -392,5 +392,17 @@ $cg = out( 'changed-gone' );
 eq( [ $cg['status'] ?? null, field( $cg, 'safe_to_upgrade' ), $cg['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed-gone: no verdict, the remaining file checked' );
 eq( report( 'changed-gone' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed-gone: a file deleted since the listing is unreadable' );
 
+$sl = out( 'slashes' );
+$r  = report( 'slashes' );
+eq( without_duration( $sl ), without_duration( $full ), 'slashes: a path with repeated slashes scans like the plain one' );
+eq( [ $r['components'] ?? null, $r['not_checked'] ?? null ], [ $rep['components'] ?? [], $rep['not_checked'] ?? [] ], 'slashes: same findings and not_checked' );
+$prs = out( 'php-rel-slashes' );
+eq( [ without_duration( $prs ), report( 'php-rel-slashes' )['components'] ?? null ], [ without_duration( $pr ), report( 'php-rel' )['components'] ?? [] ], 'php-rel-slashes: the release layout is found through repeated slashes' );
+$es = out( 'est-slashes' );
+$e  = out( 'est' );
+eq( [ $es['status'] ?? null, $es['php_files'] ?? null, $es['php_bytes'] ?? null, $es['components'] ?? null ], [ 'ok', $e['php_files'] ?? 0, $e['php_bytes'] ?? 0, $e['components'] ?? 0 ], 'est-slashes: counts equal the plain path' );
+tool_error( 'badargs-dotdot', 'bad arguments: path must be', 2, false );
+tool_error( 'badargs-slashdot', 'bad arguments: path must be', 2, false );
+
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

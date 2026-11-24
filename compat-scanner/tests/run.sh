@@ -212,6 +212,13 @@ during changed-gone rm -f "$WORK/changed-gone/htdocs/wp-content/plugins/p/z.php"
 scan changed-gone "$WORK/changed-gone" wp /var/www/htdocs 8.4 600 -e COMPAT_BATCH_SIZE=1 -e COMPAT_DEBUG=1
 wait || true
 
+# Repeated slashes in the path (site-command keeps --public-dir=a//b as typed); `..` is still refused.
+scan slashes "$WORK/wp" wp /var/www//htdocs//current/ 8.4 600
+scan php-rel-slashes "$WORK/php-rel" php /var/www/htdocs//current//public 8.4 600
+estimate est-slashes "$WORK/wp" wp //var/www/htdocs//current 8.4
+scan badargs-dotdot "$WORK/wp" wp /var/www/../etc 8.4 600
+scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
+
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
 	--mount "type=bind,src=$RES,dst=/r,readonly" \

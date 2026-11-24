@@ -1669,8 +1669,9 @@ function parse_args( array $argv, array &$cfg ): void {
 	if ( ! in_array( $cfg['site_type'], [ 'wp', 'php' ], true ) ) {
 		throw new BadArgs( 'site type must be wp or php' );
 	}
-	$path = rtrim( $cfg['path'], '/' );
-	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|//|[\x00-\x1F\x7F]#', $path ) ) {
+	// site-command keeps a --public-dir like `a//b` as typed.
+	$path = rtrim( (string) preg_replace( '#/+#', '/', $cfg['path'] ), '/' );
+	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|[\x00-\x1F\x7F]#', $path ) ) {
 		throw new BadArgs( 'path must be an absolute path under ' . MOUNT_ROOT );
 	}
 	$cfg['path'] = $path;
