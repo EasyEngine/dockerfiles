@@ -438,6 +438,17 @@ eq( array_column( comp_of( report( 'phpbeside' ), 'directory', '../app' )['findi
 $e = out( 'est-phpbeside' );
 eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 3, 3 ], 'est-phpbeside: counts equal the scan' );
 
+$bd = out( 'bedrock' );
+$bf = [];
+foreach ( report( 'bedrock' )['components'] ?? [] as $c ) {
+	foreach ( $c['findings'] as $f ) {
+		$bf[] = $c['type'] . ':' . $c['slug'] . ':' . $f['file'];
+	}
+}
+sort( $bf );
+eq( [ $bd['status'] ?? null, field( $bd, 'safe_to_upgrade' ), $bd['errors'] ?? null ], [ 'ok', false, 5 ], 'bedrock: verdict and errors (web/app is inside a directory component, so its uploads/ is walked)' );
+eq( $bf, [ 'directory:htdocs/config:application.php', 'directory:htdocs/vendor:acme/lib/Lib.php', 'directory:htdocs/web:app/mu-plugins/m.php', 'directory:htdocs/web:app/plugins/p/p.php', 'directory:htdocs/web:app/uploads/u.php' ], 'bedrock: config/, vendor/ and web/app checked, web/wp core not' );
+
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
 eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
 eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mount is read-only inside the container' );

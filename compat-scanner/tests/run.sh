@@ -190,6 +190,7 @@ badlink_fixture "$WORK/wplink-dangling" wp /var/www/nowhere
 badlink_fixture "$WORK/wplink-out" wp /etc
 badlink_fixture "$WORK/phplink-dangling" php /var/www/nowhere
 phpbeside_fixture "$WORK/phpbeside"
+bedrock_fixture "$WORK/bedrock"
 scan wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4 600
 estimate est-wpscope "$WORK/wpscope" wp /var/www/htdocs 8.4
 scan wpmoved "$WORK/wpmoved" wp /var/www/htdocs 8.4 600
@@ -198,6 +199,8 @@ scan wplink-out "$WORK/wplink-out" wp /var/www/htdocs 8.4 600
 scan phplink-dangling "$WORK/phplink-dangling" php /var/www/htdocs 8.4 600
 scan phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4 600
 estimate est-phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4
+# Bedrock scanned from its project root: config/, vendor/ and web/ but not core.
+scan bedrock "$WORK/bedrock" wp /var/www/htdocs 8.4 600
 
 # A full /out: a tool_error, not a quietly incomplete result.
 rc=0

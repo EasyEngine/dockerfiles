@@ -377,3 +377,22 @@ phpbeside_fixture() {
 	ln -s app/public "$a/htdocs"
 	chmod -R a+rX "$a"
 }
+
+# bedrock_fixture <app-dir>: Bedrock in htdocs (config/ and vendor/ beside web/, content in web/app, core in web/wp).
+bedrock_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/config/application.php" "Config::define( 'WP_CONTENT_DIR', \$webroot_dir . '/app' );
+each( \$a );"
+	php_file "$h/vendor/acme/lib/Lib.php" 'each( $a );'
+	php_file "$h/web/index.php" "require __DIR__ . '/wp/wp-blog-header.php';"
+	php_file "$h/web/wp-config.php" "require dirname( __DIR__ ) . '/config/application.php';"
+	php_file "$h/web/app/plugins/p/p.php" "/* Plugin Name: P */
+each( \$a );"
+	php_file "$h/web/app/mu-plugins/m.php" 'each( $a );'
+	php_file "$h/web/app/uploads/u.php" 'each( $a );'
+	php_file "$h/web/wp/wp-settings.php" 'each( $a );'
+	php_file "$h/web/wp/wp-load.php" 'each( $a );'
+	php_file "$h/web/wp/wp-includes/x.php" 'each( $a );'
+	php_file "$h/web/wp/wp-admin/y.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
