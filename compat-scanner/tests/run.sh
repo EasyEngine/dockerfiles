@@ -199,6 +199,8 @@ scan wplink-dangling "$WORK/wplink-dangling" wp /var/www/htdocs 8.4 600
 scan wplink-out "$WORK/wplink-out" wp /var/www/htdocs 8.4 600
 scan phplink-dangling "$WORK/phplink-dangling" php /var/www/htdocs 8.4 600
 scan phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4 600
+phpdeep_fixture "$WORK/phpdeep"
+scan phpdeep "$WORK/phpdeep" php /var/www/htdocs 8.4 600
 estimate est-phpbeside "$WORK/phpbeside" php /var/www/htdocs 8.4
 # Bedrock scanned from its project root: config/, vendor/ and web/ but not core.
 scan bedrock "$WORK/bedrock" wp /var/www/htdocs 8.4 600

@@ -385,17 +385,17 @@ tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1',
 
 $ws = out( 'wpscope' );
 $wr = report( 'wpscope' );
-eq( [ $ws['status'] ?? null, field( $ws, 'safe_to_upgrade' ), $ws['errors'] ?? null, $ws['files_checked'] ?? null, $ws['files_not_checked'] ?? null ], [ 'ok', false, 10, 10, 0 ], 'wpscope: everything but core checked' );
+eq( [ $ws['status'] ?? null, field( $ws, 'safe_to_upgrade' ), $ws['errors'] ?? null, $ws['files_checked'] ?? null, $ws['files_not_checked'] ?? null ], [ 'ok', false, 11, 11, 0 ], 'wpscope: everything but core checked' );
 eq(
 	comp_rows( $wr ),
 	[
+		[ 'directory', 'htdocs/forum', null, null, null, 2, 2, 0 ],
 		[ 'plugin', 'plug-in', null, 'Plug In', null, 1, 1, 0 ],
 		[ 'plugin', 'plug-v', null, 'Plug V', null, 1, 1, 0 ],
 		[ 'plugin', 'moved', 'htdocs/content', 'Moved', null, 1, 1, 0 ],
 		[ 'theme', 'theme-in', null, 'Theme In', null, 1, 1, 0 ],
 		[ 'mu-plugin', 'mu-plugins', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'htdocs', null, null, null, 1, 1, 0 ],
-		[ 'directory', 'htdocs/forum', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'htdocs/shared', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'htdocs/wp', null, null, null, 1, 1, 0 ],
 		[ 'other', '', 'htdocs/content', null, null, 1, 1, 0 ],
@@ -409,9 +409,9 @@ foreach ( $wr['components'] ?? [] as $c ) {
 	}
 }
 sort( $ff );
-eq( $ff, [ ':object-cache.php', 'htdocs/forum:index.php', 'htdocs/shared:loose.php', 'htdocs/wp:wp-content/plugins/stock/stock.php', 'htdocs:custom-api.php', 'moved:moved.php', 'mu-plugins:mu-link.php', 'plug-in:plug-in.php', 'plug-v:plug-v.php', 'theme-in:functions.php' ], 'wpscope: finding files (core, links to core and the content dir\'s uploads absent)' );
+eq( $ff, [ ':object-cache.php', 'htdocs/forum:inc/version.php', 'htdocs/forum:index.php', 'htdocs/shared:loose.php', 'htdocs/wp:wp-content/plugins/stock/stock.php', 'htdocs:custom-api.php', 'moved:moved.php', 'mu-plugins:mu-link.php', 'plug-in:plug-in.php', 'plug-v:plug-v.php', 'theme-in:functions.php' ], 'wpscope: finding files (core, links to core or into it, and the content dir\'s uploads absent; a version.php outside core checked)' );
 $e = out( 'est-wpscope' );
-eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 10, $ws['php_bytes'] ?? null, 10 ], 'est-wpscope: counts equal the scan' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 11, $ws['php_bytes'] ?? null, 10 ], 'est-wpscope: counts equal the scan' );
 
 $wm = out( 'wpmoved' );
 eq( [ $wm['status'] ?? null, field( $wm, 'safe_to_upgrade' ), $wm['errors'] ?? null, $wm['files_checked'] ?? null ], [ 'ok', false, 1, 2 ], 'wpmoved: no wp-content, a moved content dir is still checked' );
@@ -435,6 +435,9 @@ eq(
 	'phpbeside: components (htdocs -> app/public listed once, as htdocs)'
 );
 eq( array_column( comp_of( report( 'phpbeside' ), 'directory', '../app' )['findings'] ?? [], 'file' ), [ 'src/boot.php' ], 'phpbeside: ../app finding path' );
+$pd = out( 'phpdeep' );
+eq( [ $pd['status'] ?? null, field( $pd, 'safe_to_upgrade' ), $pd['errors'] ?? null, $pd['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpdeep: code two levels above the public dir checked' );
+eq( array_column( comp_of( report( 'phpdeep' ), 'directory', '../project' )['findings'] ?? [], 'file' ), [ 'app/src/boot.php', 'lib/x.php' ], 'phpdeep: ../project findings (public listed once, as htdocs)' );
 $e = out( 'est-phpbeside' );
 eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 3, 3 ], 'est-phpbeside: counts equal the scan' );
 

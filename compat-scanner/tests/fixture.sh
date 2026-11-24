@@ -331,6 +331,10 @@ each( \$a );"
 	# Links to core stay out.
 	ln -s ../wp-includes "$wc/inc"
 	ln -s ../wp/wp-load.php "$wc/load.php"
+	ln -s ../wp-includes/version.php "$wc/core-version.php"
+	ln -s ../../wp/wp-includes "$wc/mu-plugins/inc"
+	# A version.php outside core is code.
+	php_file "$h/forum/inc/version.php" 'each( $a );'
 	# A content dir beside wp-content (moved WP_CONTENT_DIR): a branch root with its own top-level skips.
 	php_file "$h/content/plugins/moved/moved.php" "/* Plugin Name: Moved */
 each( \$a );"
@@ -447,4 +451,14 @@ tempbackup_fixture() {
 each( $a );'
 	php_file "$wc/upgrade-temp-backup/themes/oldt/functions.php" 'each( $a );'
 	chmod -R a+rX "$1"
+}
+
+# phpdeep_fixture <app-dir>: htdocs links two levels into the app beside it (project/app/public).
+phpdeep_fixture() {
+	local a=$1
+	php_file "$a/project/app/public/index.php" 'require "../src/boot.php";'
+	php_file "$a/project/app/src/boot.php" 'each( $a );'
+	php_file "$a/project/lib/x.php" 'each( $a );'
+	ln -s project/app/public "$a/htdocs"
+	chmod -R a+rX "$a"
 }

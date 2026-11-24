@@ -319,7 +319,7 @@ final class Scanner {
 				}
 			)
 		);
-		$this->scanTop( MOUNT_ROOT, $entries, $loose, '../', true );
+		$this->scanTop( MOUNT_ROOT, $entries, $loose, '../' );
 	}
 
 	/**
@@ -573,9 +573,8 @@ final class Scanner {
 
 	/**
 	 * Top level of a directory: subdirectories are `directory` components named $prefix . name, files go to $loose.
-	 * With $ancestors, a directory holding the scan root is walked too (htdocs a link into it); the root itself stays out.
 	 */
-	private function scanTop( string $root, array $entries, int $loose, string $prefix, bool $ancestors = false ): void {
+	private function scanTop( string $root, array $entries, int $loose, string $prefix ): void {
 		foreach ( $entries as $name ) {
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
 				continue;
@@ -584,7 +583,7 @@ final class Scanner {
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
-				if ( ( ! $this->outOfScope( $real ) || ( $ancestors && $this->holdsRoot( $real ) ) ) && $this->markDir( $real ) ) {
+				if ( $this->inScope( $path, $real ) && $this->markDir( $real ) ) {
 					$comp = $this->comp( 'directory', $prefix . $name, null, $path );
 					$this->walk( $path, $comp );
 				}
@@ -595,6 +594,14 @@ final class Scanner {
 				$this->visit( $path, $name, $loose );
 			}
 		}
+	}
+
+	/**
+	 * outOfScope(), except that a real directory (not reached through a link) above the scan root is walked:
+	 * htdocs may link into the app beside it (`htdocs -> project/app/public`); the root itself stays out.
+	 */
+	private function inScope( string $path, string $real ): bool {
+		return ! $this->outOfScope( $real ) || ( $path === $real && $this->holdsRoot( $real ) );
 	}
 
 	/** A directory above the scan root other than the mount itself. */
@@ -628,7 +635,7 @@ final class Scanner {
 			}
 			return;
 		}
-		if ( $this->outOfScope( $real ) ) {
+		if ( ! $this->inScope( $path, $real ) ) {
 			return;
 		}
 
@@ -702,16 +709,25 @@ final class Scanner {
 		return $this->isCore( $real );
 	}
 
-	/** wp-admin/, wp-includes/ and the core files beside them, wherever WordPress is installed. */
+	/** wp-admin/, wp-includes/ (and anything in them) and the core files beside them, wherever WordPress is installed. */
 	private function isCore( string $real ): bool {
 		if ( 'wp' !== $this->cfg['site_type'] ) {
 			return false;
 		}
-		$name = basename( $real );
-		if ( ! in_array( $name, CORE_DIRS, true ) && ! in_array( $name, CORE_FILES, true ) ) {
-			return false;
+		if ( in_array( basename( $real ), CORE_FILES, true ) && $this->coreDir( dirname( $real ) ) ) {
+			return true;
 		}
-		$dir = dirname( $real );
+		// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
+		for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
+			if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** A directory holding wp-settings.php and wp-includes/. */
+	private function coreDir( string $dir ): bool {
 		if ( ! isset( $this->coreDirs[ $dir ] ) ) {
 			$this->coreDirs[ $dir ] = is_file( $dir . '/wp-settings.php' ) && is_dir( $dir . '/wp-includes' );
 		}
