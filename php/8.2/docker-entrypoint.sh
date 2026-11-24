@@ -23,7 +23,7 @@ nr_set() {
 }
 # The app name is set only over the image's placeholder or when missing, so a name set by hand stays.
 nr_set_appname() {
-    local last placeholder="^[[:space:]]*newrelic\\.appname[[:space:]]*=[[:space:]]*[\"']?PHP Application[\"']?[[:space:]]*(;.*)?\$"
+    local last placeholder="^[[:space:]]*newrelic\\.appname[[:space:]]*=[[:space:]]*(\"PHP Application\"|'PHP Application'|PHP Application)[[:space:]]*(;.*)?\$"
     last=$(grep -a "^[[:space:]]*newrelic\.appname[[:space:]]*=" "$nr_ini" | tail -n 1)
     [[ -z "$last" || "$last" =~ $placeholder ]] || return 0
     nr_set 'newrelic\.appname' "newrelic.appname = \"$NEWRELIC_APPNAME\""
