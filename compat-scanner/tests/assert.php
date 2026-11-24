@@ -408,5 +408,9 @@ $tb = out( 'tempbackup' );
 eq( [ $tb['status'] ?? null, field( $tb, 'safe_to_upgrade' ), $tb['errors'] ?? null, $tb['files_checked'] ?? null ], [ 'ok', true, 0, 1 ], "tempbackup: WordPress' rollback copies in upgrade-temp-backup/ aren't scanned" );
 eq( comp_rows( report( 'tempbackup' ) ), [ [ 'plugin', 'p', null, 'P', null, 1, 0, 0 ] ], 'tempbackup: only the live plugin' );
 
+$el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
+eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );
+check( 1 === preg_match( '/^too large to estimate in 1 s: (\d+) PHP files listed before the time ran out; run the check itself, without --estimate\z/', $el['detail'] ?? '', $m ) && (int) $m[1] < 20000, 'est-listing: detail counts the files listed so far (' . ( $el['detail'] ?? '' ) . ')' );
+
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

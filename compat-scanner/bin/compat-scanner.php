@@ -34,6 +34,8 @@ const FSIZE_SLACK     = 2097152;
 const HEADER_MAX      = 6144;
 const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
+// Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
+const CALIBRATION_RESERVE = 20;
 
 class TimedOut extends RuntimeException {
 }
@@ -52,6 +54,8 @@ final class Scanner {
 	private $start;
 	/** @var float */
 	private $deadline;
+	/** @var float */
+	private $listDeadline;
 	/** @var int */
 	private $timeoutLabel;
 	/** @var bool */
@@ -102,6 +106,7 @@ final class Scanner {
 
 		$this->timeoutLabel = $limit;
 		$this->deadline     = $this->start + $limit;
+		$this->listDeadline = $this->isScan ? $this->deadline : $this->deadline - min( CALIBRATION_RESERVE, $limit / 4 );
 	}
 
 	public function run(): array {
@@ -618,7 +623,10 @@ final class Scanner {
 	}
 
 	private function tick(): void {
-		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->deadline ) {
+		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->listDeadline ) {
+			if ( ! $this->isScan ) {
+				throw new TimedOut( sprintf( 'too large to estimate in %d s: %d PHP files listed before the time ran out; run the check itself, without --estimate', $this->timeoutLabel, $this->listedFiles + $this->notCheckedCount ) );
+			}
 			throw new TimedOut( sprintf( 'timed out after %d s while listing files', $this->timeoutLabel ) );
 		}
 	}

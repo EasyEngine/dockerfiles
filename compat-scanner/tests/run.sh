@@ -223,6 +223,9 @@ scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
 tempbackup_fixture "$WORK/tempbackup"
 scan tempbackup "$WORK/tempbackup" wp /var/www/htdocs 8.4 600
 
+# An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
+estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
+
 chmod -R a+rX "$RES"
 docker run --rm --network none --read-only --user 33:33 \
 	--mount "type=bind,src=$RES,dst=/r,readonly" \
