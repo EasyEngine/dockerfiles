@@ -21,6 +21,13 @@ nr_set() {
         printf '%s\n' "$2" >> "$nr_ini"
     fi
 }
+# The app name is set only over the image's placeholder or when missing, so a name set by hand stays.
+nr_set_appname() {
+    local last placeholder='^newrelic\.appname[[:space:]]*=[[:space:]]*"?PHP Application"?[[:space:]]*$'
+    last=$(grep "^newrelic\.appname[[:space:]]*=" "$nr_ini" | tail -n 1)
+    [[ -z "$last" || "$last" =~ $placeholder ]] || return 0
+    nr_set 'newrelic\.appname' "newrelic.appname = \"$NEWRELIC_APPNAME\""
+}
 
 if [[ -z "${NEWRELIC_LICENSE_KEY:-}" ]] || [[ -z "${NEWRELIC_APPNAME:-}" ]]; then
     :
@@ -33,9 +40,8 @@ else
     elif [[ ! -e "$nr_ini" ]] && ! cp /data/newrelic.ini "$nr_ini"; then
         warn "could not create $nr_ini, New Relic stays off"
     fi
-    # Set by key, not by placeholder, so a changed key or app name reaches an ini written on an earlier start.
-    if [[ -f "$nr_ini" ]] && ! { nr_set 'newrelic\.license' "newrelic.license = \"$NEWRELIC_LICENSE_KEY\"" &&
-        nr_set 'newrelic\.appname' "newrelic.appname = \"$NEWRELIC_APPNAME\""; }; then
+    # The license is set by key, not by placeholder, so a changed key reaches an ini written on an earlier start.
+    if [[ -f "$nr_ini" ]] && ! { nr_set 'newrelic\.license' "newrelic.license = \"$NEWRELIC_LICENSE_KEY\"" && nr_set_appname; }; then
         warn "could not write the New Relic license to $nr_ini"
     fi
 fi
