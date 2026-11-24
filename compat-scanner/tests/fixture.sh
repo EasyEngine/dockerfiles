@@ -438,3 +438,13 @@ ext_php_fixture() {
 	mkdir -p "$h" && ln -s nowhere.inc "$h/gone.inc"
 	chmod -R a+rX "$1"
 }
+
+# tempbackup_fixture <app-dir>: a clean plugin beside WordPress' rollback copies in wp-content/upgrade-temp-backup/.
+tempbackup_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	php_file "$wc/upgrade-temp-backup/plugins/old/old.php" '/* Plugin Name: Old */
+each( $a );'
+	php_file "$wc/upgrade-temp-backup/themes/oldt/functions.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}

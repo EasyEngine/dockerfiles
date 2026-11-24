@@ -22,7 +22,8 @@ const PHPCS_BIN       = TOOL_DIR . '/vendor/squizlabs/php_codesniffer/bin/phpcs'
 const REPORT_CLASS    = TOOL_DIR . '/src/LinesReport.php';
 const CALIBRATION_DIR = TOOL_DIR . '/calibration';
 const JSON_FLAGS      = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages' ];
+// upgrade-temp-backup: WordPress' rollback copies of updated plugins and themes (6.3+).
+const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages', 'upgrade-temp-backup' ];
 const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
 // WordPress core in a directory that holds wp-settings.php and wp-includes/: never scanned.
@@ -38,6 +39,8 @@ const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
 // File extensions checked as PHP code, matched case-insensitively.
 const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', 'engine', 'php5', 'php7' ];
+// Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
+const CALIBRATION_RESERVE = 20;
 
 class TimedOut extends RuntimeException {
 }
@@ -56,6 +59,8 @@ final class Scanner {
 	private $start;
 	/** @var float */
 	private $deadline;
+	/** @var float */
+	private $listDeadline;
 	/** @var int */
 	private $timeoutLabel;
 	/** @var bool */
@@ -108,6 +113,7 @@ final class Scanner {
 
 		$this->timeoutLabel = $limit;
 		$this->deadline     = $this->start + $limit;
+		$this->listDeadline = $this->isScan ? $this->deadline : $this->deadline - min( CALIBRATION_RESERVE, $limit / 4 );
 	}
 
 	public function run(): array {
@@ -787,7 +793,10 @@ final class Scanner {
 	}
 
 	private function tick(): void {
-		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->deadline ) {
+		if ( 0 === ( ++$this->ticks % 500 ) && microtime( true ) >= $this->listDeadline ) {
+			if ( ! $this->isScan ) {
+				throw new TimedOut( sprintf( 'too large to estimate in %d s: %d PHP files listed before the time ran out; run the check itself, without --estimate', $this->timeoutLabel, $this->listedFiles + $this->notCheckedCount ) );
+			}
 			throw new TimedOut( sprintf( 'timed out after %d s while listing files', $this->timeoutLabel ) );
 		}
 	}
@@ -1008,10 +1017,12 @@ final class Scanner {
 		foreach ( $batch as $k => $f ) {
 			$real = $this->resolve( $f['path'] );
 			$st   = null === $real ? false : @stat( $real );
-			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) || $st['size'] !== $f['size'] ) {
-				$batch[ $k ]['real'] = null; // Gone or changed since the listing.
+			if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
+				$batch[ $k ]['real'] = null; // Gone, or no longer a regular file.
 				continue;
 			}
+			// A file rewritten since the listing (a live site) is checked as it is now.
+			$batch[ $k ]['size']  = $st['size'];
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
 			// file whose real name has no --extensions match: such files go through STDIN.
@@ -1837,8 +1848,9 @@ function parse_args( array $argv, array &$cfg ): void {
 	if ( ! in_array( $cfg['site_type'], [ 'wp', 'php' ], true ) ) {
 		throw new BadArgs( 'site type must be wp or php' );
 	}
-	$path = rtrim( $cfg['path'], '/' );
-	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|//|[\x00-\x1F\x7F]#', $path ) ) {
+	// site-command keeps a --public-dir like `a//b` as typed.
+	$path = rtrim( (string) preg_replace( '#/+#', '/', $cfg['path'] ), '/' );
+	if ( ( MOUNT_ROOT !== $path && 0 !== strpos( $path, MOUNT_ROOT . '/' ) ) || preg_match( '#/\.\.?(/|\z)|[\x00-\x1F\x7F]#', $path ) ) {
 		throw new BadArgs( 'path must be an absolute path under ' . MOUNT_ROOT );
 	}
 	$cfg['path'] = $path;

@@ -356,8 +356,8 @@ foreach ( [ 'switch', 'changed' ] as $name ) {
 }
 tool_error( 'switch', 'the site code changed during the scan', 1 );
 $ch = out( 'changed' );
-eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed: no verdict, the unchanged file checked' );
-eq( report( 'changed' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed: a file that changed since the listing is unreadable' );
+eq( [ $ch['status'] ?? null, field( $ch, 'safe_to_upgrade' ), $ch['errors'] ?? null, $ch['files_checked'] ?? null, $ch['files_not_checked'] ?? null ], [ 'ok', false, 1, 2, 0 ], 'changed: a file that grew since the listing is checked as it is now' );
+eq( [ $ch['php_bytes'] ?? null, array_column( comp_of( report( 'changed' ), 'plugin', 'p' )['findings'] ?? [], 'file' ) ], [ (int) trim( raw( 'changed.bytes' ) ), [ 'z.php' ] ], 'changed: its new size and content count' );
 
 $rl = out( 'rootlock' );
 eq( [ $rl['status'] ?? null, field( $rl, 'safe_to_upgrade' ), $rl['files_not_checked'] ?? null ], [ 'ok', null, 1 ], 'rootlock: an unreachable root is not no_code_found' );
@@ -516,6 +516,33 @@ eq( [ array_column( comp_of( $r, 'directory', 'app' )['findings'] ?? [], 'file' 
 eq( $r['not_checked'] ?? null, [ [ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => 'gone.inc', 'reason' => 'unreadable' ] ], 'ext-php: a dangling .inc link in the root is other, not a directory' );
 $e = out( 'est-ext-php' );
 eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ $ep['files_checked'] + $ep['files_not_checked'], $ep['php_bytes'] ?? null, $ep['components_checked'] ?? null ], 'est-ext-php: counts equal the scan' );
+
+// ---------------------------------------------------------- more edge cases
+
+eq( trim( raw( 'changed-gone.sync' ) ), 'ok', 'changed-gone: the change lands after the listing, before the next file' );
+$cg = out( 'changed-gone' );
+eq( [ $cg['status'] ?? null, field( $cg, 'safe_to_upgrade' ), $cg['files_checked'] ?? null ], [ 'ok', null, 1 ], 'changed-gone: no verdict, the remaining file checked' );
+eq( report( 'changed-gone' )['not_checked'] ?? null, [ [ 'type' => 'plugin', 'slug' => 'p', 'branch' => null, 'file' => 'z.php', 'reason' => 'unreadable' ] ], 'changed-gone: a file deleted since the listing is unreadable' );
+
+$sl = out( 'slashes' );
+$r  = report( 'slashes' );
+eq( without_duration( $sl ), without_duration( $full ), 'slashes: a path with repeated slashes scans like the plain one' );
+eq( [ $r['components'] ?? null, $r['not_checked'] ?? null ], [ $rep['components'] ?? [], $rep['not_checked'] ?? [] ], 'slashes: same findings and not_checked' );
+$prs = out( 'php-rel-slashes' );
+eq( [ without_duration( $prs ), report( 'php-rel-slashes' )['components'] ?? null ], [ without_duration( $pr ), report( 'php-rel' )['components'] ?? [] ], 'php-rel-slashes: the release layout is found through repeated slashes' );
+$es = out( 'est-slashes' );
+$e  = out( 'est' );
+eq( [ $es['status'] ?? null, $es['php_files'] ?? null, $es['php_bytes'] ?? null, $es['components'] ?? null ], [ 'ok', $e['php_files'] ?? 0, $e['php_bytes'] ?? 0, $e['components'] ?? 0 ], 'est-slashes: counts equal the plain path' );
+tool_error( 'badargs-dotdot', 'bad arguments: path must be', 2, false );
+tool_error( 'badargs-slashdot', 'bad arguments: path must be', 2, false );
+
+$tb = out( 'tempbackup' );
+eq( [ $tb['status'] ?? null, field( $tb, 'safe_to_upgrade' ), $tb['errors'] ?? null, $tb['files_checked'] ?? null ], [ 'ok', true, 0, 1 ], "tempbackup: WordPress' rollback copies in upgrade-temp-backup/ aren't scanned" );
+eq( comp_rows( report( 'tempbackup' ) ), [ [ 'plugin', 'p', null, 'P', null, 1, 0, 0 ] ], 'tempbackup: only the live plugin' );
+
+$el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
+eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );
+check( 1 === preg_match( '/^too large to estimate in 1 s: (\d+) PHP files listed before the time ran out; run the check itself, without --estimate\z/', $el['detail'] ?? '', $m ) && (int) $m[1] < 20000, 'est-listing: detail counts the files listed so far (' . ( $el['detail'] ?? '' ) . ')' );
 
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );
