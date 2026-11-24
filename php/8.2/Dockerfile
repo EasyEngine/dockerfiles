@@ -16,6 +16,8 @@ RUN set -ex; \
 		libjpeg62-turbo-dev \
 		libkrb5-dev \
 		libmagickwand-dev \
+		# ImageMagick's AVIF encoder; a libheif1 Recommends, so --no-install-recommends leaves it out.
+		libheif-plugin-aomenc \
 		libgraphicsmagick1-dev \
 		libmcrypt-dev \
 		libicu-dev \
