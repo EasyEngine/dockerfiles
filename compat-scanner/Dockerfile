@@ -1,4 +1,4 @@
-FROM composer:2.10.3 AS composer
+FROM composer:2.11.1 AS composer
 
 WORKDIR /opt/compat-scanner
 COPY composer.json composer.lock ./
