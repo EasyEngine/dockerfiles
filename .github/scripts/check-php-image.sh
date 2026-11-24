@@ -84,27 +84,28 @@ avif_php='try {
 avif=$(docker run --rm --pull=never --entrypoint php "$image" -r "$avif_php" 2>&1) || errors+=("AVIF encode failed: $avif")
 
 # 6. The entrypoint's New Relic setup, run as www-data on a www-data owned conf.d (as `ee site enable` leaves it):
-# values with sed metacharacters, a restart with the same values, a changed key and app name, a refused value, a missing ini.
+# values with sed metacharacters, a restart with the same values, a changed key, an app name already set (kept), a refused value, a missing ini.
 nr_check='
 ini=/usr/local/etc/php/conf.d/newrelic.ini
 start() { setpriv --reuid=www-data --regid=www-data --init-groups docker-entrypoint.sh "$@"; }
 [ -f /data/newrelic.ini ] || echo "/data/newrelic.ini is missing"
 chown -R www-data: /usr/local/etc/php/conf.d
-check() {
-	out=$(start php -r "echo ini_get(\"newrelic.license\") === getenv(\"NEWRELIC_LICENSE_KEY\") && ini_get(\"newrelic.appname\") === getenv(\"NEWRELIC_APPNAME\") ? \"ok\" : \"PHP reads \" . var_export(ini_get(\"newrelic.license\"), true) . \" / \" . var_export(ini_get(\"newrelic.appname\"), true);" 2>&1)
+check() { # check <label> <expected app name>
+	out=$(NR_APP=$2 start php -r "echo ini_get(\"newrelic.license\") === getenv(\"NEWRELIC_LICENSE_KEY\") && ini_get(\"newrelic.appname\") === getenv(\"NR_APP\") ? \"ok\" : \"PHP reads \" . var_export(ini_get(\"newrelic.license\"), true) . \" / \" . var_export(ini_get(\"newrelic.appname\"), true);" 2>&1)
 	[ "$out" = ok ] || echo "$1: $out"
 }
+app1="ci & co/app|1" app2="ci & co/app|2"
 # 40 characters: the agent ignores a license of any other length.
-export NEWRELIC_LICENSE_KEY="ci/key&1|0123456789abcdef0123456789abcde" NEWRELIC_APPNAME="ci & co/app|1"
-check "first start"
-inode=$(stat -c %i "$ini"); check "restart"
+export NEWRELIC_LICENSE_KEY="ci/key&1|0123456789abcdef0123456789abcde" NEWRELIC_APPNAME=$app1
+check "first start" "$app1"
+inode=$(stat -c %i "$ini"); check "restart" "$app1"
 [ "$(stat -c %i "$ini")" = "$inode" ] || echo "a restart with the same values rewrote $ini"
-NEWRELIC_LICENSE_KEY="ci/key&2|0123456789abcdef0123456789abcde"; check "key change"
-NEWRELIC_APPNAME="ci & co/app|2"; check "app name change"
+NEWRELIC_LICENSE_KEY="ci/key&2|0123456789abcdef0123456789abcde"; check "key change" "$app1"
+NEWRELIC_APPNAME=$app2; check "app name already set" "$app1"
 cp "$ini" /tmp/nr.ini; out=$(NEWRELIC_APPNAME="ci\"app" start true 2>&1)
 cmp -s /tmp/nr.ini "$ini" || echo "a value with a quote changed $ini"
 [ -n "$out" ] || echo "a value with a quote was refused silently"
-rm "$ini"; check "missing newrelic.ini"
+rm "$ini"; check "missing newrelic.ini" "$app2"
 fpm=$(start php-fpm -t 2>&1) || echo "php-fpm -t failed: $fpm"
 grep -Ei "warning|unable to load" <<<"$fpm" || true
 '
