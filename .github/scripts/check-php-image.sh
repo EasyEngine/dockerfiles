@@ -98,8 +98,8 @@ app1="ci & co/app|1" app2="ci & co/app|2"
 # 40 characters: the agent ignores a license of any other length.
 export NEWRELIC_LICENSE_KEY="ci/key&1|0123456789abcdef0123456789abcde" NEWRELIC_APPNAME=$app1
 check "first start" "$app1"
-inode=$(stat -c %i "$ini"); check "restart" "$app1"
-[ "$(stat -c %i "$ini")" = "$inode" ] || echo "a restart with the same values rewrote $ini"
+before="$(stat -c %i "$ini") $(cksum < "$ini")"; check "restart" "$app1"
+[ "$(stat -c %i "$ini") $(cksum < "$ini")" = "$before" ] || echo "a restart with the same values changed $ini"
 NEWRELIC_LICENSE_KEY="ci/key&2|0123456789abcdef0123456789abcde"; check "key change" "$app1"
 NEWRELIC_APPNAME=$app2; check "app name already set" "$app1"
 cp "$ini" /tmp/nr.ini
