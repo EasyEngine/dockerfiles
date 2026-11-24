@@ -88,7 +88,6 @@ avif=$(docker run --rm --pull=never --entrypoint php "$image" -r "$avif_php" 2>&
 nr_check='
 ini=/usr/local/etc/php/conf.d/newrelic.ini
 start() { setpriv --reuid=www-data --regid=www-data --init-groups docker-entrypoint.sh "$@"; }
-start php -m | grep -qx newrelic || { echo skipped; exit 0; }
 [ -f /data/newrelic.ini ] || echo "/data/newrelic.ini is missing"
 chown -R www-data: /usr/local/etc/php/conf.d
 check() {
@@ -109,9 +108,12 @@ rm "$ini"; check "missing newrelic.ini"
 fpm=$(start php-fpm -t 2>&1) || echo "php-fpm -t failed: $fpm"
 grep -Ei "warning|unable to load" <<<"$fpm" || true
 '
-if ! nr=$(docker run --rm --pull=never --user root --entrypoint bash "$image" -c "$nr_check" 2>&1); then
+# Images without the extension (8.6) skip it; a missing extension on the others is already a missing module.
+if ! grep -qx newrelic <<<"$modules"; then
+	:
+elif ! nr=$(docker run --rm --pull=never --user root --entrypoint bash "$image" -c "$nr_check" 2>&1); then
 	errors+=("New Relic entrypoint check failed to run: $nr")
-elif [ -n "$nr" ] && [ "$nr" != skipped ]; then
+elif [ -n "$nr" ]; then
 	errors+=("New Relic entrypoint check: $nr")
 fi
 
@@ -123,7 +125,7 @@ if [ ${#errors[@]} -gt 0 ]; then
 	done
 	exit 1
 fi
-echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini, every extension reports a version, Imagick encodes AVIF, New Relic entrypoint ok (or no New Relic)."
+echo "$image: all $(grep -cv -e '^#' -e '^[[:space:]]*$' "$expected") expected modules present, clean startup, no dangling extension ini, every extension reports a version, Imagick encodes AVIF, New Relic entrypoint ok (when loaded)."
 # Third-party versions (those that differ from PHP's own) for the build log.
 php_version=$(docker run --rm --pull=never --entrypoint php "$image" -r 'echo PHP_VERSION;' 2>/dev/null)
 echo "$image: PHP $php_version; $(sed -n "s/^ok \([^=]*\)='\(.*\)'$/\1 \2/p" <<<"$versions" | grep -v " $php_version\$" | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
