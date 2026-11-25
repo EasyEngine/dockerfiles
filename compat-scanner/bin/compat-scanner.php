@@ -29,7 +29,8 @@ const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
 // Core of the WordPress root (wp-settings.php and wp-includes/ in the scanned directory): never scanned.
 const CORE_DIRS       = [ 'wp-admin', 'wp-includes' ];
-const CORE_FILES      = [ 'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
+// index.php isn't here: it is tiny, and EE validates the root's own loader too.
+const CORE_FILES      = [ 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
 const TYPE_ORDER      = [ 'plugin' => 0, 'theme' => 1, 'mu-plugin' => 2, 'directory' => 3, 'other' => 4 ];
 // Same as EE's REPORT_MAX: EE rejects a larger report anyway.
 const REPORT_MAX      = 134217728;
@@ -45,6 +46,8 @@ const SNIFF_BYTES     = 8192;
 const SNIFF_MAX       = 1048576;
 // Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
 const MIXED_FLAG      = 0x80000000;
+// Never PHP templates, so not sniffed: docs, scripts and styles quote `<?php` (and one such file hangs a sniff).
+const NO_SNIFF_EXTENSIONS = [ 'md', 'markdown', 'txt', 'rst', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'map', 'json', 'css', 'scss', 'sass', 'less', 'svg', 'xml', 'yml', 'yaml', 'lock', 'csv', 'po', 'pot', 'mo', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'tif', 'tiff', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz' ];
 // Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
 const CALIBRATION_RESERVE = 20;
 
@@ -101,6 +104,14 @@ final class Scanner {
 	private $listedBytes = 0;
 	/** @var int */
 	private $notCheckedCount = 0;
+	/** @var int Data-only files (`<?php exit; ?>` + data), checked at listing without PHPCS. */
+	private $dataFiles = 0;
+	/** @var int */
+	private $dataBytes = 0;
+	/** @var int Listed files PHPCS reads through STDIN, one run each (for the estimate). */
+	private $stdinFiles = 0;
+	/** @var float Seconds left for searching skipped directories. */
+	private $skippedBudget = 0.0;
 
 	/** @var string */
 	private $work = '';
@@ -122,6 +133,7 @@ final class Scanner {
 		$this->timeoutLabel = $limit;
 		$this->deadline     = $this->start + $limit;
 		$this->listDeadline = $this->isScan ? $this->deadline : $this->deadline - min( CALIBRATION_RESERVE, $limit / 4 );
+		$this->skippedBudget = (float) $cfg['skipped_seconds'];
 	}
 
 	public function run(): array {
@@ -139,7 +151,7 @@ final class Scanner {
 		}
 		$this->listFiles();
 
-		if ( 0 === $this->listedFiles && 0 === $this->notCheckedCount ) {
+		if ( 0 === $this->listedFiles && 0 === $this->notCheckedCount && 0 === $this->dataFiles ) {
 			$this->removeWork();
 			return $this->reduced( 'no_code_found' );
 		}
@@ -666,8 +678,11 @@ final class Scanner {
 			return;
 		}
 		$mixed = false;
-		if ( ! $this->isPhpName( $name ) ) {
+		if ( ! $this->isPhpName( $name ) && ! $this->isPhpName( $real ) ) {
 			// Any name can be included. One PHP can't read can't run either, so it isn't reported.
+			if ( in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), NO_SNIFF_EXTENSIONS, true ) ) {
+				return;
+			}
 			$tag = $this->sniff( $real );
 			if ( null === $tag ) {
 				return;
@@ -685,9 +700,24 @@ final class Scanner {
 			return;
 		}
 
+		if ( ! $mixed && $this->dataOnly( $real ) ) {
+			// Execution stops at the exit: nothing PHPCS could flag runs.
+			$c = &$this->comps[ $comp ];
+			$c['listed']++;
+			$c['files']++;
+			$c['bytes'] += $st['size'];
+			unset( $c );
+			$this->dataFiles++;
+			$this->dataBytes += $st['size'];
+			return;
+		}
+
 		$this->comps[ $comp ]['listed']++;
 		$this->listedFiles++;
 		$this->listedBytes += $st['size'];
+		if ( odd_path( $real ) || ! $this->phpcsTakes( $real ) ) {
+			$this->stdinFiles++;
+		}
 		if ( $this->isScan ) {
 			// Relative to the component's base; the spool counts against the report cap too.
 			$rel   = $this->rel( $comp, $path );
@@ -706,7 +736,7 @@ final class Scanner {
 
 	/**
 	 * A directory skipped by name (uploads/, cache/, node_modules/, ...): only its code-named files are listed (no sniff),
-	 * e.g. Wordfence's wflogs/*.php. Past the bounds the directory is one not_checked entry instead.
+	 * e.g. Wordfence's wflogs/*.php or W3TC's cache files. Past the bounds the directory is one not_checked entry instead.
 	 */
 	private function skipped( string $path, string $file, int $comp ): void {
 		// A link that dangles or leaves the mount can't be searched (uploads -> /mnt/... included).
@@ -738,7 +768,8 @@ final class Scanner {
 
 	/**
 	 * Code-named and .phar entries of a tree (and bad links that may be code), sorted, each => whether it is a
-	 * directory that can't be listed; null past COMPAT_SKIPPED_FILES files or COMPAT_SKIPPED_BYTES bytes.
+	 * directory that can't be listed; null past COMPAT_SKIPPED_FILES files, COMPAT_SKIPPED_BYTES bytes of files
+	 * PHPCS would read (data-only files don't count) or the COMPAT_SKIPPED_SECONDS all skipped dirs share.
 	 *
 	 * @return array<string,bool>|null
 	 */
@@ -747,6 +778,8 @@ final class Scanner {
 		$bytes = 0;
 		$seen  = [];
 		$stack = [ $dir ];
+		$start = microtime( true );
+		$stop  = $start + $this->skippedBudget;
 		while ( $stack ) {
 			$d  = array_pop( $stack );
 			$st = @stat( $d );
@@ -778,20 +811,55 @@ final class Scanner {
 				}
 				if ( $this->isPhpName( $name ) || $this->isPharName( $name ) ) {
 					$size = @filesize( $path );
-					$bytes += false === $size ? 0 : $size;
+					$r    = $this->resolve( $path );
+					if ( false !== $size && ! ( null !== $r && $this->dataOnly( $r ) ) ) {
+						$bytes += $size;
+					}
 				} elseif ( preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name ) || ! is_link( $path ) || null !== $this->resolve( $path ) ) {
 					continue;
 				}
 				$hits[ $path ] = false;
-				if ( count( $hits ) > $this->cfg['skipped_files'] || $bytes > $this->cfg['skipped_bytes'] ) {
+				if ( count( $hits ) > $this->cfg['skipped_files'] || $bytes > $this->cfg['skipped_bytes'] || microtime( true ) > $stop ) {
 					closedir( $handle );
+					$this->skippedBudget = max( 0.0, $stop - microtime( true ) );
 					return null;
 				}
 			}
 			closedir( $handle );
 		}
+		$this->skippedBudget = max( 0.0, $stop - microtime( true ) );
 		ksort( $hits, SORT_STRING );
 		return $hits;
+	}
+
+	/**
+	 * A data file PHP never runs past its first statement: `<?php exit; ?>`, `<?php die(); ?>`, `<?php exit('...'); ?>`
+	 * (W3TC, WP Super Cache, Wordfence), optionally with `__halt_compiler();` before the `?>`. Without
+	 * __halt_compiler() the rest must hold no other open tag, since PHP compiles the whole file first.
+	 */
+	private function dataOnly( string $path ): bool {
+		$fh = open_regular( $path );
+		if ( null === $fh ) {
+			return false;
+		}
+		$head = (string) fread( $fh, 512 );
+		$ok   = (bool) preg_match( '/\A(?:\xEF\xBB\xBF)?<\?php\s+(?:exit|die)\s*(?:\(\s*(?:\'[^\'\\\\]*\'|"[^"\\\\$]*"|\d+)?\s*\))?\s*;?\s*(__halt_compiler\s*\(\s*\)\s*;?\s*)?\?>/i', $head, $m );
+		if ( $ok && empty( $m[1] ) ) {
+			$rest = substr( $head, strlen( $m[0] ) );
+			while ( true ) {
+				if ( preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $rest ) ) {
+					$ok = false;
+					break;
+				}
+				$more = fread( $fh, 65536 );
+				if ( false === $more || '' === $more ) {
+					break;
+				}
+				$rest = substr( $rest, -5 ) . $more; // A tag split across reads.
+			}
+		}
+		fclose( $fh );
+		return $ok;
 	}
 
 	/**
@@ -892,8 +960,9 @@ final class Scanner {
 		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/i', $name );
 	}
 
+	/** `.phar` and the archive forms PHP's phar extension also opens (`.phar.tar`, `.phar.tar.gz`, `.phar.zip`, ...). */
 	private function isPharName( string $name ): bool {
-		return (bool) preg_match( '/\.phar\z/i', $name );
+		return (bool) preg_match( '/\.phar(?:\.(?:tar|zip))?(?:\.(?:gz|bz2))?\z/i', $name );
 	}
 
 	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
@@ -1081,13 +1150,14 @@ final class Scanner {
 		$bps        = $calBytes / $calSeconds;
 		$batches    = $files > 0 ? (int) ceil( $files / $this->cfg['batch_size'] ) : 0;
 		$perBatch   = $this->cfg['seconds_per_batch'];
-		$raw        = $bytes / $bps + $batches * $perBatch;
+		// Every STDIN file is a PHPCS run of its own, which costs at least its start-up.
+		$raw        = $bytes / $bps + $batches * $perBatch + $this->stdinFiles * $empty;
 		$est        = max( 1, (int) round( $raw ) );
 
 		$doc = $this->head( 'ok' );
 
-		$doc['php_files']              = $files + $this->notCheckedCount;
-		$doc['php_bytes']              = $bytes;
+		$doc['php_files']              = $files + $this->notCheckedCount + $this->dataFiles;
+		$doc['php_bytes']              = $bytes + $this->dataBytes;
 		$doc['components']             = count( $this->listedComponents() );
 		$doc['estimated_seconds']      = $est;
 		$doc['estimated_seconds_low']  = max( 1, (int) round( $est * $this->cfg['low_factor'] ) );
@@ -1099,6 +1169,7 @@ final class Scanner {
 			'bytes_per_second'    => (int) round( $bps ),
 			'batches'             => $batches,
 			'seconds_per_batch'   => $perBatch,
+			'stdin_files'         => $this->stdinFiles,
 			'cpus'                => cpu_count(),
 			'load_average_1m'     => load_average(),
 			'low_factor'          => $this->cfg['low_factor'],
@@ -1186,6 +1257,8 @@ final class Scanner {
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
 			// file whose real name has no --extensions match: such files go through STDIN.
 			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->phpcsTakes( $real );
+			// Not code by name: a sniffed file, whose PHPCS run gets its own time cap.
+			$batch[ $k ]['cap'] = $this->isPhpName( basename( $f['path'] ) ) || $this->isPhpName( $real ) ? 0.0 : (float) $this->cfg['sniffed_timeout'];
 			if ( ! $batch[ $k ]['stdin'] ) {
 				$plain[ $real ] = $k;
 			}
@@ -1239,8 +1312,12 @@ final class Scanner {
 	private function runSingle( array $f ): void {
 		$last = null;
 		foreach ( [ $this->cfg['file_memory'], $this->cfg['retry_memory'] ] as $memory ) {
-			$res = $this->phpcs( [ $f['real'] ], $memory, 'single', $f['stdin'] );
+			$res = $this->phpcs( [ $f['real'] ], $memory, 'single', $f['stdin'], $f['cap'] );
 			$this->debug( sprintf( 'single %s at %s rc=%d %.2fs', $f['path'], $memory, $res['rc'], $res['seconds'] ) );
+			if ( $res['capped'] ) {
+				$this->spoolNotChecked( $f['comp'], $this->rel( $f['comp'], $f['path'] ), 'timeout' );
+				return;
+			}
 			if ( $res['timeout'] || ( ! $res['ok'] && microtime( true ) >= $this->deadline ) ) {
 				throw $this->timedOutAt( $f['path'] );
 			}
@@ -1320,12 +1397,12 @@ final class Scanner {
 			$this->spoolNotChecked( $comp, $rel, 'unparseable' );
 			return;
 		}
-		// Text before the tag (a README, a script with `<?php` in a string): an error may be on code that never runs.
+		// Text before the tag (a script with `<?php` in a string): an error, or PHPCS's own trouble, may be on code that never runs.
 		$messages = null;
 		if ( $f['mixed'] ) {
 			$messages = [];
 			while ( null !== ( $m = $reader->message() ) ) {
-				if ( 'ERROR' === $m[2] && 0 !== strpos( $m[3], 'Internal.' ) ) {
+				if ( 'ERROR' === $m[2] || 0 === strpos( $m[3], 'Internal.' ) ) {
 					$reader->skipMessages();
 					$this->spoolNotChecked( $comp, $rel, 'php_tag' );
 					return;
@@ -1538,14 +1615,18 @@ final class Scanner {
 	 *
 	 * @return array{ok:bool,timeout:bool,too_large:bool,unreadable:bool,rc:int,seconds:float,report:string}
 	 */
-	private function phpcs( array $paths, string $memory, string $tag, bool $stdin = false ): array {
+	private function phpcs( array $paths, string $memory, string $tag, bool $stdin = false, float $cap = 0.0 ): array {
 		$report = $this->work . "/phpcs-$tag.out";
-		$res    = [ 'ok' => false, 'timeout' => false, 'too_large' => false, 'unreadable' => false, 'rc' => -1, 'seconds' => 0.0, 'report' => $report ];
+		$res    = [ 'ok' => false, 'timeout' => false, 'capped' => false, 'too_large' => false, 'unreadable' => false, 'rc' => -1, 'seconds' => 0.0, 'report' => $report ];
 
 		$left = $this->deadline - microtime( true );
 		if ( $left <= 0 ) {
 			$res['timeout'] = true;
 			return $res;
+		}
+		$capped = $cap > 0 && $cap < $left;
+		if ( $capped ) {
+			$left = $cap;
 		}
 
 		@unlink( $report );
@@ -1595,6 +1676,11 @@ final class Scanner {
 
 		$res['rc']      = $rc;
 		$res['seconds'] = ( hrtime( true ) - $t ) / 1e9;
+		// Killed by its own cap, not the scan deadline (busybox timeout reports SIGKILL as 9 or 137).
+		if ( $capped && in_array( $rc, [ 9, 137 ], true ) && $res['seconds'] >= $cap * 0.99 ) {
+			$res['capped'] = true;
+			return $res;
+		}
 
 		clearstatcache();
 		$size = @filesize( $report );
@@ -2045,8 +2131,10 @@ function parse_args( array $argv, array &$cfg ): void {
 	$cfg['low_factor']        = env_float( 'COMPAT_LOW_FACTOR', 0.8 );
 	$cfg['high_factor']       = env_float( 'COMPAT_HIGH_FACTOR', 1.5 );
 	$cfg['report_max']        = env_int( 'COMPAT_REPORT_MAX', REPORT_MAX, 1024 );
-	$cfg['skipped_files']     = env_int( 'COMPAT_SKIPPED_FILES', 2000 );
+	$cfg['skipped_files']     = env_int( 'COMPAT_SKIPPED_FILES', 100000 );
 	$cfg['skipped_bytes']     = env_int( 'COMPAT_SKIPPED_BYTES', 67108864 );
+	$cfg['skipped_seconds']   = env_int( 'COMPAT_SKIPPED_SECONDS', 60, 0 );
+	$cfg['sniffed_timeout']   = env_int( 'COMPAT_SNIFFED_TIMEOUT', 30 );
 	if ( $cfg['low_factor'] > 1 || $cfg['high_factor'] < 1 ) {
 		throw new BadArgs( 'COMPAT_LOW_FACTOR must be at most 1 and COMPAT_HIGH_FACTOR at least 1' );
 	}

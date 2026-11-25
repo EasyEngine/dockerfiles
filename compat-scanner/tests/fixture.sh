@@ -481,8 +481,8 @@ phpdeep_fixture() {
 	chmod -R a+rX "$a"
 }
 
-# wflogs <dir>: Wordfence 9.1.1's WAF files (tests/wflogs, written by its own waf/bootstrap.php and storage code), plus
-# the template.php it writes; each starts `<?php exit('Access denied'); __halt_compiler(); ?>` and holds data after that.
+# wflogs <dir>: Wordfence 9.1.1's WAF files (tests/wflogs, written by its own code with tests/wflogs-gen.php: data files that
+# start `<?php exit('Access denied'); __halt_compiler(); ?>`, and a compiled rules.php), plus the template.php it writes.
 wflogs() {
 	mkdir -p "$1"
 	cp "$HERE"/wflogs/*.php "$1/"
@@ -569,13 +569,17 @@ sniff_fixture() {
 	printf '\xef\xbb\xbf<?= each( $a ); ?>\n' > "$p/views/bom.html"
 	printf '<div>\n<?php each( $a ); ?>\n</div>\n' > "$p/views/page.html"
 	printf '<p>\n<?php $x = utf8_encode( "a" ); ?>\n' > "$p/views/warn.html"
-	printf '# P\n\nUse it like this: <?php echo p(); ?>\n' > "$p/README.md"
+	# Never templates: docs, scripts, styles and data aren't sniffed, whatever they quote.
+	for f in README.md notes.txt app.js app.ts style.css data.json; do printf 'x <?php each( $a ); ?>\n' > "$p/$f"; done
 	{ printf '<p>\n'; head -c 1100000 /dev/zero | tr '\0' a; printf '\n'; } > "$p/big.txt"
-	{ printf 'x <?php echo 1; ?>\n'; head -c 1100000 /dev/zero | tr '\0' a; } > "$p/big-mixed.txt"
+	{ printf 'x <?php echo 1; ?>\n'; head -c 1100000 /dev/zero | tr '\0' a; } > "$p/big-mixed.tpl"
 	printf '\x89PNG\r\n\x1a\n\0\0\0\r<?php each( $a );' > "$p/logo.png"
 	printf '{"a": "<?xml version=1.0?>"}\n' > "$p/data.json"
 	printf '<?php __HALT_COMPILER();' > "$p/lib.phar"
+	printf 'x' > "$p/lib.phar.tar.gz"
 	ln -s lib.phar "$p/a-lib.php"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/tpl.php"
+	ln -s tpl.php "$p/a-tpl.txt"
 	ln -s nowhere.phar "$p/gone.phar"
 	chmod -R a+rX "$1"
 }
@@ -598,5 +602,46 @@ each( $a );'
 	php_file "$wc/plugins/fakecore/wp-settings.php" 'each( $a );'
 	mkdir -p "$wc/plugins/fakecore/wp-includes"
 	ln -s ../old/wp-includes "$wc/inc"
+	chmod -R a+rX "$1"
+}
+
+# hang_fixture <app-dir>: a template whose PHPCS run never ends (from CodeMirror's mode/php/test.js, MIT; PHPCS reads
+# `<?php]` as a short open tag). Its run is capped by COMPAT_SNIFFED_TIMEOUT instead of hanging the scan.
+hang_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	mkdir -p "$p/views"
+	cat > "$p/views/hang.tpl" <<'TPL'
+<p>
+<?php ?>
+     '[meta <?php] [comment /* Escaping */]',
+     '[keyword echo] [string "aaa\\$aaaa->aaa.aaa"];',
+     '[keyword echo] [string "aaa\\$aaaa[[2]]aaa.aaa"];',
+     '[keyword echo] [string "aaa\\$aaaa[[asd]]aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\$aaaa->aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\$aaaa[[2]]aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\aaaaa[[asd]]aaa.aaa"];',
+     '[keyword echo] [string "aaa\\${aaaa->aaa.aaa"];',
+TPL
+	chmod -R a+rX "$1"
+}
+
+# cache_fixture <app-dir> <n>: <n> W3TC disk cache files (`<?php exit; ?>` + expiry + data), WP Super Cache legacy pages
+# (`<?php die(); ?>` + HTML), Docket Cache files (real `return` code, checked) and a header followed by another open tag.
+cache_fixture() {
+	local wc="$1/htdocs/wp-content" n=$2 d
+	php_file "$1/htdocs/wp-settings.php"
+	mkdir -p "$1/htdocs/wp-includes"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	for d in $(seq 0 $(( (n - 1) / 1000 ))); do
+		mkdir -p "$wc/cache/object/$d"
+		seq $(( d * 1000 + 1 )) $(( d * 1000 + 1000 < n ? d * 1000 + 1000 : n )) | sed "s|^|$wc/cache/object/$d/|; s|\$|.php|" |
+			xargs -n 500 sh -c 'for f; do printf "<?php exit; ?>1795600000a:1:{s:3:\"key\";s:5:\"value\";}" > "$f"; done' sh
+	done
+	mkdir -p "$wc/cache/supercache" "$wc/cache/docket-cache"
+	printf '<?php die(); ?><!DOCTYPE html><html><body>cached page</body></html>' > "$wc/cache/wp-cache-1a2b.php"
+	printf "<?php exit('Access denied'); ?>\\n<html></html>" > "$wc/cache/supercache/page.php"
+	printf "<?php if(!\\\\defined('ABSPATH')){return false;}\\nreturn array('key'=>'k','group'=>'options','data'=>array('a'=>1));\\n/*@DOCKET_CACHE_EOF*/" > "$wc/cache/docket-cache/0a1b2c.php"
+	printf '<?php exit; ?>data\\n<?php each( $a );\\n' > "$wc/cache/object/tail.php"
 	chmod -R a+rX "$1"
 }

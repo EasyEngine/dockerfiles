@@ -263,7 +263,8 @@ nested_fixture "$WORK/nested"
 wordfence_fixture "$WORK/wordfence"
 scan skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4 600
 scan skipdirs-files "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_FILES=7
-scan skipdirs-bytes "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_BYTES=40000
+scan skipdirs-bytes "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_BYTES=5000
+scan skipdirs-time "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_SECONDS=0
 scan wordfence "$WORK/wordfence" wp /var/www/htdocs 8.4 600
 estimate est-skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4
 scan skipdirs-php "$WORK/skipdirs" php /var/www/htdocs 8.4 600
@@ -274,6 +275,13 @@ scan sniff "$WORK/sniff" wp /var/www/htdocs 8.4 600
 estimate est-sniff "$WORK/sniff" wp /var/www/htdocs 8.4
 scan sniff-php "$WORK/sniff" php /var/www/htdocs 8.4 600
 scan nested "$WORK/nested" wp /var/www/htdocs 8.4 600
+hang_fixture "$WORK/hang"
+cache_fixture "$WORK/cache" 2500
+cache_fixture "$WORK/cache50k" 50000
+scan hang "$WORK/hang" wp /var/www/htdocs 8.4 120 -e COMPAT_SNIFFED_TIMEOUT=3
+scan cache "$WORK/cache" wp /var/www/htdocs 8.4 600
+estimate est-cache "$WORK/cache" wp /var/www/htdocs 8.4
+scan cache50k "$WORK/cache50k" wp /var/www/htdocs 8.4 600
 estimate est-nested "$WORK/nested" wp /var/www/htdocs 8.4
 
 # An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
