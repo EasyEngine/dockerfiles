@@ -223,7 +223,7 @@ eq(
 	],
 	'full: not_checked has the dangling link, the unlistable dir, and bad links in a branch (skipped names are no skip there)'
 );
-eq( trim( (string) file_get_contents( "$dir/full.outdir" ) ), './report.json', 'full: /out holds only report.json' );
+eq( trim( (string) file_get_contents( "$dir/full.outdir" ) ), "./manifest.json\n./report.json", 'full: /out holds only manifest.json and report.json' );
 
 // ---------------------------------------------------------- verdict variants
 
@@ -706,6 +706,49 @@ eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 2506, 2 ], 'est-cac
 $el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
 eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );
 check( 1 === preg_match( '/^too large to estimate in 1 s: (\d+) PHP files listed before the time ran out; run the check itself, without --estimate\z/', $el['detail'] ?? '', $m ) && (int) $m[1] < 20000, 'est-listing: detail counts the files listed so far (' . ( $el['detail'] ?? '' ) . ')' );
+
+// ----------------------------------------------------------- file manifest
+
+// Every ok scan writes manifest.json; its checked/not_checked match the counts, and every code file of the tree, by the
+// manifest's own rules, is covered (tests/manifest-check.php ran against the scanned tree).
+$manifests = 0;
+foreach ( glob( "$dir/*.stdout" ) as $f ) {
+	$name = basename( $f, '.stdout' );
+	$doc  = json_decode( (string) file_get_contents( $f ), true );
+	if ( ! is_array( $doc ) || 'ok' !== ( $doc['status'] ?? null ) || ! empty( $doc['estimate'] ) ) {
+		check( ! is_file( "$dir/$name.manifest.json" ), "$name: no manifest unless the scan is ok" );
+		continue;
+	}
+	$manifests++;
+	$mc = json_decode( raw( "$name.mcheck" ), true );
+	check( is_array( $mc ), "$name: manifest checked (" . trim( substr( raw( "$name.mcheck" ), 0, 300 ) ) . ')' );
+	eq( $mc['problems'] ?? null, [], "$name: every code file is checked or under not_checked, or exempt" );
+	eq( [ $mc['checked'] ?? null, $mc['not_checked'] ?? null ], [ $doc['files_checked'], $doc['files_not_checked'] ], "$name: manifest counts equal files_checked and files_not_checked" );
+}
+check( $manifests >= 40, "manifests checked: $manifests" );
+$m = json_decode( raw( 'sniff.manifest.json' ), true );
+eq( array_slice( array_keys( (array) $m ), 0, 9 ), [ 'v', 'code_extensions', 'extensions_case_insensitive', 'phar_regex', 'sniff', 'roots', 'excluded', 'old_releases', 'core' ], 'manifest: keys' );
+eq( [ $m['sniff']['bytes'] ?? null, $m['sniff']['scope'] ?? null ], [ 8192, 'except_skipped_dirs' ], 'manifest: sniff window and scope' );
+sort( $m['checked'] );
+eq(
+	$m['checked'],
+	array_map(
+		static function ( $f ) {
+			return "/var/www/htdocs/wp-content/plugins/p/$f";
+		},
+		[ 'bin/tool', 'p.php', 'tpl.php', 'views/admin.tpl', 'views/bom.html', 'views/warn.html' ]
+	),
+	'manifest: sniff checked (the link a-tpl.txt as its target tpl.php)'
+);
+eq( json_decode( raw( 'wpcfg-parent.manifest.json' ), true )['checked'] ?? null, [ '/var/www/wp-config.php', '/var/www/htdocs/wp-content/plugins/p/p.php' ], 'manifest: the parent wp-config.php WordPress loads is checked' );
+$m = json_decode( raw( 'php-rel.manifest.json' ), true );
+eq( [ $m['old_releases'] ?? null, $m['roots'] ?? null ], [ [ '/var/www/htdocs/releases/1/' ], [ '/var/www/' ] ], 'manifest: php old releases and root' );
+$m = json_decode( raw( 'full.manifest.json' ), true );
+eq( $m['core']['root'] ?? null, '/var/www/htdocs/releases/1/', 'manifest: core root is the resolved WordPress root' );
+check( ! preg_grep( '#/releases/1/(wp-includes/|wp-settings\.php$)#', $m['checked'] ?? [] ), 'manifest: root core is never checked' );
+check( in_array( '/var/www/htdocs/releases/1/wp-content/plugins/hardlink/h1.php', $m['checked'] ?? [], true ) xor in_array( '/var/www/htdocs/releases/1/wp-content/plugins/hardlink/h2.php', $m['checked'] ?? [], true ), 'manifest: a hard-linked file is listed once' );
+$m = json_decode( raw( 'nested.manifest.json' ), true );
+eq( $m['not_checked'] ?? null, [ '/var/www/htdocs/old/', '/var/www/htdocs/wp-content/plugins/fakecore/' ], 'manifest: nested installs are directory entries' );
 
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

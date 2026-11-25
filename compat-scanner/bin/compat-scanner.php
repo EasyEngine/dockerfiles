@@ -48,6 +48,9 @@ const SNIFF_MAX       = 1048576;
 const DATA_MAX        = 8388608;
 // Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
 const MIXED_FLAG      = 0x80000000;
+// What sniff() matches in a file's first SNIFF_BYTES, as one regex (no NUL anywhere, then an open tag), for the manifest.
+const SNIFF_REGEX     = '/\\A(?=[^\\x00]*\\z)[\\s\\S]*?<\\?(?:php(?:\\s|\\z)|=)/i';
+const PHAR_REGEX      = '/\\.phar(?:\\.(?:tar|zip))?(?:\\.(?:gz|bz2))?\\z/i';
 // Never PHP templates, so not sniffed: docs, scripts and styles quote `<?php` (and one such file hangs a sniff).
 const NO_SNIFF_EXTENSIONS = [ 'md', 'markdown', 'txt', 'rst', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'map', 'json', 'css', 'scss', 'sass', 'less', 'svg', 'xml', 'yml', 'yaml', 'lock', 'csv', 'po', 'pot', 'mo', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'tif', 'tiff', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz' ];
 // Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
@@ -116,6 +119,16 @@ final class Scanner {
 	private $skippedBudget = 0.0;
 	/** @var bool Listing the code files found in a skipped directory (where caches keep data-only files). */
 	private $inSkipped = false;
+	/** @var array<string,string> Manifest spools (`checked`, `not_checked`) not yet written, by name. */
+	private $manBuf = [ 'checked' => '', 'not_checked' => '' ];
+	/** @var int */
+	private $manBytes = 0;
+	/** @var array<string,bool> not_checked paths already in the manifest. */
+	private $manNc = [];
+	/** @var string[] Real paths (with `/`) of the directories searched by name only, where nothing is sniffed. */
+	private $skippedDirs = [];
+	/** @var string[] Real paths left out of the scan on purpose: dot entries beside htdocs (php sites). */
+	private $excluded = [];
 
 	/** @var string */
 	private $work = '';
@@ -307,7 +320,8 @@ final class Scanner {
 		$this->markDir( $real );
 		$entries = $this->readDir( $wp );
 		if ( null === $entries ) {
-			$this->notChecked( $this->comp( 'other', '', null, $wp . '/wp-content' ), './', 'unreadable' );
+			// Reported as wp-content's root, as before; in the manifest it is the WordPress directory that can't be listed.
+			$this->notChecked( $this->comp( 'other', '', null, $wp . '/wp-content' ), './', 'unreadable', $real . '/' );
 		}
 		return $entries;
 	}
@@ -339,6 +353,11 @@ final class Scanner {
 		if ( null === $entries ) {
 			$this->notChecked( $loose, './', 'unreadable' );
 			return;
+		}
+		foreach ( $entries as $name ) {
+			if ( '.' === $name[0] ) {
+				$this->excluded[] = MOUNT_ROOT . '/' . $name . ( is_dir( MOUNT_ROOT . '/' . $name ) ? '/' : '' );
+			}
 		}
 		$entries = array_values(
 			array_filter(
@@ -714,6 +733,7 @@ final class Scanner {
 			unset( $c );
 			$this->dataFiles++;
 			$this->dataBytes += $st['size'];
+			$this->manifestChecked( $real, $st );
 			return;
 		}
 
@@ -756,6 +776,9 @@ final class Scanner {
 		if ( ! is_dir( $path ) ) {
 			$this->visit( $path, basename( $path ), $comp );
 			return;
+		}
+		if ( $this->isScan ) {
+			$this->skippedDirs[] = $real . '/';
 		}
 		$hits = $this->codeIn( $path );
 		if ( null === $hits ) {
@@ -895,7 +918,8 @@ final class Scanner {
 		}
 		$head = fread( $fh, SNIFF_BYTES );
 		fclose( $fh );
-		if ( false === $head || false !== strpos( $head, "\0" ) || ! preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $head, $m, PREG_OFFSET_CAPTURE ) ) {
+		// SNIFF_REGEX is the rule the manifest publishes; the second match only finds where the tag starts.
+		if ( false === $head || ! preg_match( SNIFF_REGEX, $head ) || ! preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $head, $m, PREG_OFFSET_CAPTURE ) ) {
 			return null;
 		}
 		return preg_match( '/\A(?:\xEF\xBB\xBF)?(?:#![^\n]*\n)?\s*\z/', substr( $head, 0, $m[0][1] ) ) ? 'code' : 'mixed';
@@ -984,7 +1008,7 @@ final class Scanner {
 
 	/** `.phar` and the archive forms PHP's phar extension also opens (`.phar.tar`, `.phar.tar.gz`, `.phar.zip`, ...). */
 	private function isPharName( string $name ): bool {
-		return (bool) preg_match( '/\.phar(?:\.(?:tar|zip))?(?:\.(?:gz|bz2))?\z/i', $name );
+		return (bool) preg_match( PHAR_REGEX, $name );
 	}
 
 	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
@@ -1083,9 +1107,9 @@ final class Scanner {
 		return substr( $path, strlen( $base ) + 1 );
 	}
 
-	private function notChecked( int $comp, string $file, string $reason ): void {
+	private function notChecked( int $comp, string $file, string $reason, ?string $manifestPath = null ): void {
 		if ( $this->isScan ) {
-			$this->spoolNotChecked( $comp, $file, $reason );
+			$this->spoolNotChecked( $comp, $file, $reason, $manifestPath );
 		} else {
 			$this->notCheckedCount++;
 		}
@@ -1275,6 +1299,7 @@ final class Scanner {
 			}
 			// A file rewritten since the listing (a live site) is checked as it is now.
 			$batch[ $k ]['size']  = $st['size'];
+			$batch[ $k ]['st']    = $st;
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
 			// file whose real name has no --extensions match: such files go through STDIN.
@@ -1470,9 +1495,11 @@ final class Scanner {
 		$c['warnings'] += $warnings;
 		$c['bytes']    += $f['size'];
 		unset( $c );
+		$this->manifestChecked( $f['real'], $f['st'] );
 	}
 
-	private function spoolNotChecked( int $comp, string $file, string $reason ): void {
+	/** @param string|null $manifestPath What the manifest lists, when it isn't the component's base plus `$file`. */
+	private function spoolNotChecked( int $comp, string $file, string $reason, ?string $manifestPath = null ): void {
 		$c     = $this->comps[ $comp ];
 		$entry = ',' . json_encode(
 			[ 'type' => $c['type'], 'slug' => clean_text( $c['slug'] ), 'branch' => clean_nullable( $c['branch'] ), 'file' => clean_text( $file ), 'reason' => $reason ],
@@ -1481,6 +1508,105 @@ final class Scanner {
 		$this->addReportBytes( strlen( $entry ) );
 		$this->append( $this->work . '/not_checked', $entry );
 		$this->notCheckedCount++;
+
+		// The manifest names it by real path; a directory (`…/`) covers everything below it.
+		$dir  = '/' === substr( $file, -1 );
+		$rel  = rtrim( $file, '/' );
+		$path = '' === $rel || '.' === $rel ? $c['base'] : $c['base'] . '/' . $rel;
+		$real = @realpath( $path );
+		$path = false !== $real && $this->inside( $real ) ? $real : $path;
+		$path = $dir ? rtrim( $path, '/' ) . '/' : $path;
+		$path = $manifestPath ?? $path;
+		if ( ! isset( $this->manNc[ $path ] ) ) {
+			$this->manNc[ $path ] = true;
+			$this->manifestAdd( 'not_checked', $path );
+		}
+	}
+
+	/** A file counted as checked, once per inode (hard links and two routes to one file). */
+	private function manifestChecked( string $real, array $st ): void {
+		if ( ! $this->isScan || 'm' === ( $this->seenFiles[ $st['dev'] ][ $st['ino'] ] ?? null ) ) {
+			return;
+		}
+		$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = 'm';
+		$this->manifestAdd( 'checked', $real );
+	}
+
+	private function manifestAdd( string $list, string $path ): void {
+		// JSON can't carry the bytes of a path that isn't UTF-8; such a path goes as `b64:` + its base64 (paths start with `/`).
+		$entry = ',' . json_encode( preg_match( '//u', $path ) ? $path : 'b64:' . base64_encode( $path ), JSON_FLAGS );
+
+		$this->manBytes += strlen( $entry );
+		if ( $this->manBytes > $this->cfg['report_max'] ) {
+			throw new ToolError( sprintf( 'file manifest larger than %d bytes', $this->cfg['report_max'] ) );
+		}
+		$this->manBuf[ $list ] .= $entry;
+		if ( strlen( $this->manBuf[ $list ] ) >= BUFFER_MAX ) {
+			$this->append( $this->work . "/m-$list", $this->manBuf[ $list ] );
+			$this->manBuf[ $list ] = '';
+		}
+	}
+
+	/** /out/manifest.json: what the scan covered, by real path, with the rules to re-derive the code files. */
+	private function writeManifest(): void {
+		foreach ( $this->manBuf as $list => $data ) {
+			if ( '' !== $data ) {
+				$this->append( $this->work . "/m-$list", $data );
+			}
+		}
+		$wp   = 'wp' === $this->cfg['site_type'];
+		$core = $wp && null !== $this->rootReal && $this->coreDir( $this->rootReal ) ? $this->rootReal . '/' : null;
+		$head = [
+			'v'                           => 1,
+			'code_extensions'             => CODE_EXTENSIONS,
+			'extensions_case_insensitive' => true,
+			'phar_regex'                  => PHAR_REGEX,
+			'sniff'                       => [
+				'bytes'              => SNIFF_BYTES,
+				'regex'              => SNIFF_REGEX,
+				'exclude_extensions' => NO_SNIFF_EXTENSIONS,
+				'scope'              => 'except_skipped_dirs',
+				'skipped_dirs'       => array_values( array_unique( $this->skippedDirs ) ),
+			],
+			'roots'                       => $wp ? ( null === $this->rootReal ? [] : [ $this->rootReal . '/' ] ) : [ MOUNT_ROOT . '/' ],
+			'excluded'                    => $this->excluded,
+			'old_releases'                => array_map(
+				static function ( $d ) {
+					return $d . '/';
+				},
+				$this->oldReleases
+			),
+			'core'                        => [ 'root' => $core, 'dirs' => CORE_DIRS, 'files' => CORE_FILES ],
+		];
+
+		$tmp = OUT_DIR . '/manifest.json.tmp';
+		$out = @fopen( $tmp, 'wb' );
+		if ( false === $out ) {
+			throw new ToolError( 'output directory not writable' );
+		}
+		$write = static function ( string $data ) use ( $out ) {
+			if ( fwrite( $out, $data ) !== strlen( $data ) ) {
+				throw new ToolError( 'could not write the file manifest' );
+			}
+		};
+		try {
+			$json = json_encode( $head, JSON_FLAGS );
+			$write( substr( $json, 0, -1 ) . ',"checked":[' );
+			$first = true;
+			$this->copySpool( $this->work . '/m-checked', $write, $first );
+			$write( '],"not_checked":[' );
+			$first = true;
+			$this->copySpool( $this->work . '/m-not_checked', $write, $first );
+			$write( "]}\n" );
+		} catch ( Throwable $e ) {
+			fclose( $out );
+			@unlink( $tmp );
+			throw $e;
+		}
+		if ( ! fclose( $out ) || ! @rename( $tmp, OUT_DIR . '/manifest.json' ) ) {
+			@unlink( $tmp );
+			throw new ToolError( 'could not write the file manifest' );
+		}
 	}
 
 	private function addReportBytes( int $n ): void {
@@ -1538,6 +1664,7 @@ final class Scanner {
 			}
 		);
 
+		$this->writeManifest();
 		$this->writeReport( $doc, $listed );
 		$this->removeWork();
 		$this->debug( sprintf( 'entrypoint peak memory %d bytes', memory_get_peak_usage() ) );
@@ -2165,6 +2292,9 @@ function parse_args( array $argv, array &$cfg ): void {
 function emit( array $doc, int $code, bool $report ): void {
 	global $emitted;
 	$emitted = true;
+	if ( $report && 'ok' !== $doc['status'] ) {
+		@unlink( OUT_DIR . '/manifest.json' ); // Only an ok scan has one.
+	}
 	$json    = json_encode( $doc, JSON_FLAGS ) . "\n";
 	if ( $report ) {
 		$tmp = OUT_DIR . '/report.json.tmp';
@@ -2172,6 +2302,7 @@ function emit( array $doc, int $code, bool $report ): void {
 			@unlink( $tmp );
 			// The report is part of the result: without it only a tool_error stands.
 			if ( 'tool_error' !== $doc['status'] ) {
+				@unlink( OUT_DIR . '/manifest.json' );
 				$doc['status'] = 'tool_error';
 				$doc['detail'] = 'could not write the report';
 				$json          = json_encode( $doc, JSON_FLAGS ) . "\n";
