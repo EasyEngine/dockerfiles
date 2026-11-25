@@ -860,7 +860,11 @@ final class Scanner {
 					break;
 				}
 				$more = fread( $fh, 65536 );
-				if ( false === $more || '' === $more ) {
+				if ( false === $more || ( '' === $more && ! feof( $fh ) ) ) {
+					$ok = false; // A failed read: not known to be data.
+					break;
+				}
+				if ( '' === $more ) {
 					break;
 				}
 				$read += strlen( $more );
