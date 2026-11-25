@@ -651,3 +651,70 @@ cache_fixture() {
 	{ printf '<?php exit; ?>'; head -c 9000000 /dev/zero | tr '\0' a; } > "$wc/cache/object/huge.php"
 	chmod -R a+rX "$1"
 }
+
+# stdin_fixture <app-dir>: files PHPCS reads through STDIN (a non-lowercase code extension, a newline in the name, a
+# sniffed file) whose first line starts with `phpcs_input_file:`, which PHPCS's STDIN reader would take as a file name and
+# drop; names that differ only in control characters on record()'s not_checked route; a skipped dir under a non-UTF-8 name.
+stdin_fixture() {
+	local p="$1/htdocs/wp-content/plugins/s" l1="phpcs_input_file: <?php \$f = create_function( '', '' );"
+	php_file "$p/s.php" '/* Plugin Name: S */'
+	printf '%s\neach( $a );\n' "$l1" > "$p/X.PHP"
+	printf '%s\r\neach( $a );\r\n' "$l1" > "$p/crlf.PHP"
+	printf '%s\reach( $a );\r' "$l1" > "$p/cr.PHP"
+	printf '%s\neach( $a );\n' "$l1" > "$p/new"$'\n'"line.php"
+	: > "$p/empty.PHP"
+	mkdir -p "$p/bin" && printf '%s\n' "$l1" > "$p/bin/tool"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/t"$'\x01'".tpl"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/t"$'\x02'".tpl"
+	php_file "$1/htdocs/wp-content/plugins/"$'\xff'"/node_modules/x/tool" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# phpdot_fixture <app-dir> <beside|root>: a php site whose public dir is in a dot entry of /var/www (beside: htdocs ->
+# .release/public, code in .release/lib; root: htdocs -> .release), beside the www-data home's tool caches.
+phpdot_fixture() {
+	local a=$1
+	if [ "$2" = beside ]; then
+		php_file "$a/.release/public/index.php" 'require "../lib/helper.php";'
+		php_file "$a/.release/lib/helper.php" '$f = create_function( "", "" );'
+		ln -s .release/public "$a/htdocs"
+		# Code in the home: WP-CLI packages, a script without a code extension, a dot file.
+		php_file "$a/.wp-cli/packages/vendor/v/v.php" 'each( $a );'
+		php_file "$a/.composer/vendor/bin/tool" 'each( $a );'
+		php_file "$a/.user.php" 'each( $a );'
+	else
+		php_file "$a/.release/index.php" 'echo 1;'
+		ln -s .release "$a/htdocs"
+	fi
+	# No code: caches, history, docs and binaries that quote a tag.
+	mkdir -p "$a/.composer/cache/files/x" "$a/.wp-cli/cache/core" "$a/.cache" "$a/.npm/_cacache"
+	printf 'PK\3\4<?php ' > "$a/.composer/cache/files/x/a.zip"
+	printf 'x' > "$a/.wp-cli/cache/core/wordpress-7.1.4-en_US.tar.gz"
+	printf '{"a": "<?php"}' > "$a/.cache/x.json"
+	printf '\0<?php each( $a );' > "$a/.npm/_cacache/0123abcd"
+	printf 'x <?php each( $a ); ?>\n' > "$a/.cache/notes.md"
+	printf 'ls\n' > "$a/.bash_history"
+	chmod -R a+rX "$a"
+}
+
+# untraversable_fixture <app-dir>: directories uid 33 can list but not search (r without x), in a plugin and in uploads/.
+untraversable_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/lk/lk.php" '/* Plugin Name: LK */'
+	php_file "$wc/plugins/lk/locked/c.php" 'each( $a );'
+	php_file "$wc/plugins/lk/locked/sub/a.php" 'each( $a );'
+	php_file "$wc/plugins/lk/locked/lib.v2/b.php" 'each( $a );'
+	php_file "$wc/uploads/locked/sub/d.php" 'each( $a );'
+	php_file "$wc/uploads/locked/lib.v2/e.php" 'each( $a );'
+	chmod -R a+rX "$1"
+	chmod 0744 "$wc/plugins/lk/locked" "$wc/uploads/locked"
+}
+
+# pharflood_fixture <app-dir> <n>: n empty .phar files under long names: not_checked entries without a PHPCS run.
+pharflood_fixture() {
+	local d="$1/htdocs/wp-content/plugins/p/$(printf 'd%.0s' $(seq 1 200))"
+	php_file "$1/htdocs/wp-content/plugins/p/p.php" '/* Plugin Name: P */'
+	mkdir -p "$d"
+	(cd "$d" && seq -f "f%06g-$(printf 'n%.0s' $(seq 1 100)).phar" 1 "$2" | xargs touch)
+	chmod -R a+rX "$1"
+}

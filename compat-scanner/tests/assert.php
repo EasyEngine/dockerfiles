@@ -437,7 +437,8 @@ foreach ( [ 'wplink-dangling', 'wplink-out', 'phplink-dangling' ] as $name ) {
 }
 
 $pb = out( 'phpbeside' );
-eq( [ $pb['status'] ?? null, field( $pb, 'safe_to_upgrade' ), $pb['errors'] ?? null, $pb['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpbeside: code beside htdocs checked, tool caches not' );
+eq( [ $pb['status'] ?? null, field( $pb, 'safe_to_upgrade' ), $pb['errors'] ?? null, $pb['files_checked'] ?? null, $pb['files_not_checked'] ?? null ], [ 'ok', false, 2, 3, 2 ], 'phpbeside: code beside htdocs checked, tool dirs with code not_checked' );
+eq( report( 'phpbeside' )['not_checked'] ?? null, [ nc( 'directory', '..', null, '.composer/', 'skipped' ), nc( 'directory', '..', null, '.wp-cli/', 'skipped' ) ], 'phpbeside: dot dirs of /var/www holding code are skipped entries' );
 eq(
 	comp_rows( report( 'phpbeside' ) ),
 	[
@@ -452,7 +453,7 @@ $pd = out( 'phpdeep' );
 eq( [ $pd['status'] ?? null, field( $pd, 'safe_to_upgrade' ), $pd['errors'] ?? null, $pd['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpdeep: code two levels above the public dir checked' );
 eq( array_column( comp_of( report( 'phpdeep' ), 'directory', '../project' )['findings'] ?? [], 'file' ), [ 'app/src/boot.php', 'lib/x.php' ], 'phpdeep: ../project findings (public listed once, as htdocs)' );
 $e = out( 'est-phpbeside' );
-eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 3, 3 ], 'est-phpbeside: counts equal the scan' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 5, 3 ], 'est-phpbeside: counts equal the scan' );
 
 $bd = out( 'bedrock' );
 $bf = [];
@@ -706,6 +707,52 @@ eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 2506, 2 ], 'est-cac
 $el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
 eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );
 check( 1 === preg_match( '/^too large to estimate in 1 s: (\d+) PHP files listed before the time ran out; run the check itself, without --estimate\z/', $el['detail'] ?? '', $m ) && (int) $m[1] < 20000, 'est-listing: detail counts the files listed so far (' . ( $el['detail'] ?? '' ) . ')' );
+
+// STDIN: a first line starting `phpcs_input_file:` is checked at its own line numbers (LF, CRLF, CR), also in a name
+// with a newline and in a sniffed file; names that differ only in control characters stay two entries.
+$sd = out( 'stdin' );
+$r  = report( 'stdin' );
+eq( [ $sd['status'] ?? null, field( $sd, 'safe_to_upgrade' ), $sd['errors'] ?? null, $sd['files_checked'] ?? null, $sd['files_not_checked'] ?? null ], [ 'ok', false, 8, 6, 3 ], 'stdin: verdict and counts' );
+$rows = [];
+foreach ( comp_of( $r, 'plugin', 's' )['findings'] ?? [] as $f ) {
+	$rows[] = $f['file'] . ':' . $f['line'] . ':' . substr( strrchr( $f['source'], '.' ), 1 );
+}
+eq(
+	$rows,
+	[
+		'X.PHP:1:create_functionDeprecatedRemoved', 'X.PHP:2:eachDeprecatedRemoved',
+		'cr.PHP:1:create_functionDeprecatedRemoved', 'cr.PHP:2:eachDeprecatedRemoved',
+		'crlf.PHP:1:create_functionDeprecatedRemoved', 'crlf.PHP:2:eachDeprecatedRemoved',
+		"new\u{FFFD}line.php:1:create_functionDeprecatedRemoved", "new\u{FFFD}line.php:2:eachDeprecatedRemoved",
+	],
+	'stdin: findings on line 1 and 2 of each file read through STDIN'
+);
+eq( $r['not_checked'] ?? null, [ nc( 'plugin', 's', null, 'bin/tool', 'php_tag' ), nc( 'plugin', 's', null, "t\u{FFFD}.tpl", 'php_tag' ), nc( 'plugin', 's', null, "t\u{FFFD}.tpl", 'php_tag' ) ], 'stdin: the sniffed file with code on its first line is php_tag; the twins are two entries' );
+$m = json_decode( raw( 'stdin.manifest.json' ), true );
+$p = '/var/www/htdocs/wp-content/plugins/';
+eq( $m['not_checked'] ?? null, [ $p . 's/bin/tool', $p . "s/t\x01.tpl", $p . "s/t\x02.tpl" ], 'stdin: manifest not_checked by real path, control characters kept' );
+check( in_array( 'b64:' . base64_encode( $p . "\xff/node_modules/" ), $m['sniff']['skipped_dirs'] ?? [], true ), 'stdin: a skipped dir under a non-UTF-8 name is b64: in sniff.skipped_dirs' );
+
+// Php sites: dot dirs of /var/www (the www-data home) are one entry when they hold code; one holding the public dir is walked.
+$pd = out( 'phpdot' );
+eq( [ $pd['status'] ?? null, field( $pd, 'safe_to_upgrade' ), $pd['errors'] ?? null, $pd['files_checked'] ?? null, $pd['files_not_checked'] ?? null ], [ 'ok', false, 2, 3, 2 ], 'phpdot: verdict and counts' );
+eq( finding_files( report( 'phpdot' ) ), [ 'directory:../.release::lib/helper.php', 'directory:..::.user.php' ], 'phpdot: code beside the public dir in .release, and a dot file, are checked' );
+eq( report( 'phpdot' )['not_checked'] ?? null, [ nc( 'directory', '..', null, '.composer/', 'skipped' ), nc( 'directory', '..', null, '.wp-cli/', 'skipped' ) ], 'phpdot: dot dirs holding code (a code name, or a sniffed vendor/bin script) are entries; caches are not' );
+$m = json_decode( raw( 'phpdot.manifest.json' ), true );
+eq( [ $m['sniff']['skipped_dirs'] ?? null, $m['not_checked'] ?? null ], [ [], [ '/var/www/.composer/', '/var/www/.wp-cli/' ] ], 'phpdot: manifest not_checked; dot dirs are not skipped dirs (the sniff applies there)' );
+$pr = out( 'phpdot-root' );
+eq( [ $pr['status'] ?? null, field( $pr, 'safe_to_upgrade' ), $pr['files_checked'] ?? null, $pr['files_not_checked'] ?? null ], [ 'ok', true, 1, 0 ], 'phpdot-root: htdocs -> .release is scanned as the root; tool caches give no entry' );
+eq( json_decode( raw( 'phpdot-root.manifest.json' ), true )['sniff']['skipped_dirs'] ?? null, [], 'phpdot-root: no skipped dirs' );
+
+// A directory uid 33 can list but not search is one entry, also inside a skipped dir.
+$ut = out( 'untrav' );
+eq( [ $ut['status'] ?? null, field( $ut, 'safe_to_upgrade' ), $ut['files_checked'] ?? null, $ut['files_not_checked'] ?? null ], [ 'ok', null, 1, 2 ], 'untrav: verdict and counts' );
+eq( report( 'untrav' )['not_checked'] ?? null, [ nc( 'plugin', 'lk', null, 'locked/', 'unreadable' ), nc( 'other', '', null, 'uploads/locked/', 'unreadable' ) ], 'untrav: unsearchable dirs are directory entries' );
+eq( json_decode( raw( 'untrav.manifest.json' ), true )['not_checked'] ?? null, [ '/var/www/htdocs/wp-content/plugins/lk/locked/', '/var/www/htdocs/wp-content/uploads/locked/' ], 'untrav: manifest directory entries end with /' );
+
+// 20,000 not_checked entries in 10M of entrypoint memory: the manifest keeps no set of them.
+$pf = out( 'pharflood' );
+eq( [ $pf['status'] ?? null, $pf['files_not_checked'] ?? null ], [ 'ok', 20000 ], 'pharflood: many not_checked entries in little memory' );
 
 // ----------------------------------------------------------- file manifest
 

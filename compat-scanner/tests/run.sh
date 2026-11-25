@@ -297,6 +297,19 @@ estimate est-cache "$WORK/cache" wp /var/www/htdocs 8.4
 scan cache50k "$WORK/cache50k" wp /var/www/htdocs 8.4 600
 estimate est-nested "$WORK/nested" wp /var/www/htdocs 8.4
 
+# STDIN files whose first line starts `phpcs_input_file:`, odd names on the php_tag route, php dot entries of /var/www,
+# directories uid 33 can list but not search, and many not_checked entries in little memory.
+stdin_fixture "$WORK/stdin"
+phpdot_fixture "$WORK/phpdot" beside
+phpdot_fixture "$WORK/phpdot-root" root
+untraversable_fixture "$WORK/untrav"
+pharflood_fixture "$WORK/pharflood" 20000
+scan stdin "$WORK/stdin" wp /var/www/htdocs 8.4 600
+scan phpdot "$WORK/phpdot" php /var/www/htdocs 8.4 600
+scan phpdot-root "$WORK/phpdot-root" php /var/www/htdocs 8.4 600
+scan untrav "$WORK/untrav" wp /var/www/htdocs 8.4 600
+ENTRY_MEMORY=10M scan pharflood "$WORK/pharflood" wp /var/www/htdocs 8.4 600
+
 # An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
 estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
 

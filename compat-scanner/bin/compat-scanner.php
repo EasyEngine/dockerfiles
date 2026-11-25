@@ -123,12 +123,8 @@ final class Scanner {
 	private $manBuf = [ 'checked' => '', 'not_checked' => '' ];
 	/** @var int */
 	private $manBytes = 0;
-	/** @var array<string,bool> not_checked paths already in the manifest. */
-	private $manNc = [];
 	/** @var string[] Real paths (with `/`) of the directories searched by name only, where nothing is sniffed. */
 	private $skippedDirs = [];
-	/** @var string[] Real paths left out of the scan on purpose: dot entries beside htdocs (php sites). */
-	private $excluded = [];
 
 	/** @var string */
 	private $work = '';
@@ -342,10 +338,7 @@ final class Scanner {
 		return true;
 	}
 
-	/**
-	 * Php sites: what lies in /var/www beside htdocs (code above the public dir).
-	 * Dot entries are the www-data user's home (Composer and WP-CLI caches), not site code.
-	 */
+	/** Php sites: what lies in /var/www beside htdocs (code above the public dir). */
 	private function scanBeside(): void {
 		$this->markDir( MOUNT_ROOT );
 		$loose   = $this->comp( 'directory', '..', null, MOUNT_ROOT );
@@ -355,19 +348,85 @@ final class Scanner {
 			return;
 		}
 		foreach ( $entries as $name ) {
-			if ( '.' === $name[0] ) {
-				$this->excluded[] = MOUNT_ROOT . '/' . $name . ( is_dir( MOUNT_ROOT . '/' . $name ) ? '/' : '' );
+			if ( 'htdocs' === $name ) {
+				continue;
+			}
+			$path = MOUNT_ROOT . '/' . $name;
+			$real = $this->resolve( $path );
+			// A dot dir holding the scan root is walked like any directory above it; .git is searched as everywhere.
+			if ( '.' === $name[0] && ! in_array( $name, ANY_SKIPS, true ) && null !== $real && is_dir( $real ) && ! ( $path === $real && $this->holdsRoot( $real ) ) ) {
+				$this->homeDir( $path, $real, $name, $loose );
+			} else {
+				$this->scanTop( MOUNT_ROOT, [ $name ], $loose, '../' );
 			}
 		}
-		$entries = array_values(
-			array_filter(
-				$entries,
-				static function ( $name ) {
-					return 'htdocs' !== $name && '.' !== $name[0];
+	}
+
+	/**
+	 * A dot dir of /var/www, the www-data user's home (Composer and WP-CLI caches): tool code, not the site's, so it
+	 * isn't scanned. It is one `skipped` entry when it holds a code file (by name or sniff, as the manifest defines one).
+	 */
+	private function homeDir( string $path, string $real, string $name, int $comp ): void {
+		if ( $this->inScope( $path, $real ) && $this->holdsCode( $path ) ) {
+			$this->notChecked( $comp, $name . '/', 'skipped' );
+		}
+	}
+
+	/**
+	 * Whether a tree holds a code file or something that can't be searched (an unlistable dir, a bad link that may be
+	 * code), stopping at the first; also true once the time all skipped dirs share runs out.
+	 */
+	private function holdsCode( string $dir ): bool {
+		$seen  = [];
+		$stack = [ $dir ];
+		$stop  = microtime( true ) + $this->skippedBudget;
+		$found = false;
+		while ( $stack && ! $found ) {
+			$d  = array_pop( $stack );
+			$st = @stat( $d );
+			if ( false === $st || isset( $seen[ $st['dev'] ][ $st['ino'] ] ) ) {
+				continue;
+			}
+			$seen[ $st['dev'] ][ $st['ino'] ] = true;
+
+			$handle = @opendir( $d );
+			if ( false === $handle ) {
+				$found = true;
+				continue;
+			}
+			if ( ! $this->searchable( $d ) ) {
+				$found = $this->hasEntries( $handle );
+				closedir( $handle );
+				continue;
+			}
+			while ( ! $found && false !== ( $name = readdir( $handle ) ) ) {
+				if ( '.' === $name || '..' === $name ) {
+					continue;
 				}
-			)
-		);
-		$this->scanTop( MOUNT_ROOT, $entries, $loose, '../' );
+				$this->tick();
+				if ( microtime( true ) > $stop ) {
+					$this->skippedBudget = 0.0;
+					$found = true;
+					break;
+				}
+				$path = $d . '/' . $name;
+				$real = $this->resolve( $path );
+				if ( null === $real ) {
+					$found = $this->linkMatters( $path, $name );
+				} elseif ( is_dir( $real ) ) {
+					if ( $this->inScope( $path, $real ) ) {
+						$stack[] = $path;
+					}
+				} elseif ( $this->isPhpName( $name ) || $this->isPharName( $name ) || $this->isPhpName( $real ) || $this->isPharName( $real ) ) {
+					$found = true;
+				} elseif ( ! in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), NO_SNIFF_EXTENSIONS, true ) ) {
+					$found = null !== $this->sniff( $real );
+				}
+			}
+			closedir( $handle );
+		}
+		$this->skippedBudget = max( 0.0, $stop - microtime( true ) );
+		return $found;
 	}
 
 	/**
@@ -823,6 +882,14 @@ final class Scanner {
 				$hits[ $d ] = true;
 				continue;
 			}
+			if ( ! $this->searchable( $d ) ) {
+				// Listed but not searchable: nothing in it can be read.
+				if ( $this->hasEntries( $handle ) ) {
+					$hits[ $d ] = true;
+				}
+				closedir( $handle );
+				continue;
+			}
 			while ( false !== ( $name = readdir( $handle ) ) ) {
 				if ( '.' === $name || '..' === $name ) {
 					continue;
@@ -1056,6 +1123,10 @@ final class Scanner {
 			}
 		}
 		closedir( $handle );
+		// Names without search permission: nothing in it can be read, so the whole directory is reported.
+		if ( $keys && ! $this->searchable( $dir ) ) {
+			return null;
+		}
 		sort( $keys, SORT_STRING );
 		foreach ( $keys as $i => $key ) {
 			if ( '/' === substr( $key, -1 ) ) {
@@ -1063,6 +1134,21 @@ final class Scanner {
 			}
 		}
 		return $keys;
+	}
+
+	/** Search (x) permission on a directory; posix_access() would drop a trailing `/.`. */
+	private function searchable( string $dir ): bool {
+		return ! function_exists( 'posix_access' ) || @posix_access( $dir, POSIX_X_OK );
+	}
+
+	/** @param resource $handle A directory handle. */
+	private function hasEntries( $handle ): bool {
+		while ( false !== ( $name = readdir( $handle ) ) ) {
+			if ( '.' !== $name && '..' !== $name ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private function tick(): void {
@@ -1436,12 +1522,13 @@ final class Scanner {
 	/** Counts one finished file and spools its findings from the report block. */
 	private function record( array $f, ReportReader $reader ): void {
 		$comp = $f['comp'];
-		$rel  = clean_text( $this->rel( $comp, $f['path'] ) );
+		$raw  = $this->rel( $comp, $f['path'] );
+		$rel  = clean_text( $raw );
 
 		$block = $reader->take();
 		if ( $block['u'] ) {
 			$reader->skipMessages();
-			$this->spoolNotChecked( $comp, $rel, 'unparseable' );
+			$this->spoolNotChecked( $comp, $raw, 'unparseable', $f['real'] );
 			return;
 		}
 		// Text before the tag (a script with `<?php` in a string): an error, or PHPCS's own trouble, may be on code that never runs.
@@ -1451,7 +1538,7 @@ final class Scanner {
 			while ( null !== ( $m = $reader->message() ) ) {
 				if ( 'ERROR' === $m[2] || 0 === strpos( $m[3], 'Internal.' ) ) {
 					$reader->skipMessages();
-					$this->spoolNotChecked( $comp, $rel, 'php_tag' );
+					$this->spoolNotChecked( $comp, $raw, 'php_tag', $f['real'] );
 					return;
 				}
 				$messages[] = $m;
@@ -1516,11 +1603,8 @@ final class Scanner {
 		$real = @realpath( $path );
 		$path = false !== $real && $this->inside( $real ) ? $real : $path;
 		$path = $dir ? rtrim( $path, '/' ) . '/' : $path;
-		$path = $manifestPath ?? $path;
-		if ( ! isset( $this->manNc[ $path ] ) ) {
-			$this->manNc[ $path ] = true;
-			$this->manifestAdd( 'not_checked', $path );
-		}
+		// One per report entry, so a path may repeat; a set would grow with every entry.
+		$this->manifestAdd( 'not_checked', $manifestPath ?? $path );
 	}
 
 	/** A file counted as checked, once per inode (hard links and two routes to one file). */
@@ -1533,8 +1617,7 @@ final class Scanner {
 	}
 
 	private function manifestAdd( string $list, string $path ): void {
-		// JSON can't carry the bytes of a path that isn't UTF-8; such a path goes as `b64:` + its base64 (paths start with `/`).
-		$entry = ',' . json_encode( preg_match( '//u', $path ) ? $path : 'b64:' . base64_encode( $path ), JSON_FLAGS );
+		$entry = ',' . json_encode( manifest_path( $path ), JSON_FLAGS );
 
 		$this->manBytes += strlen( $entry );
 		if ( $this->manBytes > $this->cfg['report_max'] ) {
@@ -1566,17 +1649,17 @@ final class Scanner {
 				'regex'              => SNIFF_REGEX,
 				'exclude_extensions' => NO_SNIFF_EXTENSIONS,
 				'scope'              => 'except_skipped_dirs',
-				'skipped_dirs'       => array_values( array_unique( $this->skippedDirs ) ),
+				'skipped_dirs'       => array_values( array_unique( array_map( 'manifest_path', $this->skippedDirs ) ) ),
 			],
-			'roots'                       => $wp ? ( null === $this->rootReal ? [] : [ $this->rootReal . '/' ] ) : [ MOUNT_ROOT . '/' ],
-			'excluded'                    => $this->excluded,
+			'roots'                       => $wp ? ( null === $this->rootReal ? [] : [ manifest_path( $this->rootReal . '/' ) ] ) : [ MOUNT_ROOT . '/' ],
+			'excluded'                    => [],
 			'old_releases'                => array_map(
 				static function ( $d ) {
-					return $d . '/';
+					return manifest_path( $d . '/' );
 				},
 				$this->oldReleases
 			),
-			'core'                        => [ 'root' => $core, 'dirs' => CORE_DIRS, 'files' => CORE_FILES ],
+			'core'                        => [ 'root' => null === $core ? null : manifest_path( $core ), 'dirs' => CORE_DIRS, 'files' => CORE_FILES ],
 		];
 
 		$tmp = OUT_DIR . '/manifest.json.tmp';
@@ -1793,7 +1876,7 @@ final class Scanner {
 
 		$in = [ 'file', '/dev/null', 'r' ];
 		if ( $stdin ) {
-			$in = open_regular( $paths[0] );
+			$in = $this->stdinCopy( $paths[0] );
 			if ( null === $in ) {
 				$res['unreadable'] = true;
 				return $res;
@@ -1817,6 +1900,7 @@ final class Scanner {
 		set_fsize( null );
 		if ( is_resource( $in ) ) {
 			fclose( $in );
+			@unlink( $this->work . '/stdin' );
 		}
 		if ( ! is_resource( $proc ) ) {
 			throw new ToolError( 'could not start phpcs' );
@@ -1839,6 +1923,42 @@ final class Scanner {
 			$res['ok'] = true;
 		}
 		return $res;
+	}
+
+	/**
+	 * STDIN for PHPCS: a copy behind our own `phpcs_input_file:` line, which PHPCS drops instead of the file's first line.
+	 * A constant name, as a path may hold an end of line. A file, not a pipe: PHPCS stops reading after 200 ms without data.
+	 *
+	 * @return resource|null Rewound copy, or null when the file can't be read.
+	 */
+	private function stdinCopy( string $path ) {
+		$src = open_regular( $path );
+		if ( null === $src ) {
+			return null;
+		}
+		$dst = @fopen( $this->work . '/stdin', 'w+b' );
+		if ( false === $dst ) {
+			fclose( $src );
+			throw new ToolError( 'could not write to the output directory' );
+		}
+		$data = "phpcs_input_file: STDIN\n";
+		do {
+			if ( fwrite( $dst, $data ) !== strlen( $data ) ) {
+				fclose( $src );
+				fclose( $dst );
+				throw new ToolError( 'could not write to the output directory' );
+			}
+			$data = fread( $src, BUFFER_MAX );
+		} while ( false !== $data && '' !== $data );
+		$failed = false === $data || ! feof( $src );
+		fclose( $src );
+		if ( $failed ) {
+			fclose( $dst );
+			@unlink( $this->work . '/stdin' );
+			return null;
+		}
+		rewind( $dst );
+		return $dst;
 	}
 
 	// ------------------------------------------------------------------ misc
@@ -2097,6 +2217,11 @@ function clean_text( string $s ): string {
 		$s = (string) json_decode( (string) json_encode( $s, JSON_INVALID_UTF8_SUBSTITUTE ) );
 	}
 	return (string) preg_replace( '/[\x{00}-\x{1F}\x{7F}-\x{9F}\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}]/u', "\u{FFFD}", $s );
+}
+
+/** A manifest path: JSON can't carry the bytes of one that isn't UTF-8, so it goes as `b64:` + base64 (paths start with `/`). */
+function manifest_path( string $path ): string {
+	return preg_match( '//u', $path ) ? $path : 'b64:' . base64_encode( $path );
 }
 
 function clean_nullable( ?string $s ): ?string {
