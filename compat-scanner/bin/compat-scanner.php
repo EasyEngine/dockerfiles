@@ -22,11 +22,12 @@ const PHPCS_BIN       = TOOL_DIR . '/vendor/squizlabs/php_codesniffer/bin/phpcs'
 const REPORT_CLASS    = TOOL_DIR . '/src/LinesReport.php';
 const CALIBRATION_DIR = TOOL_DIR . '/calibration';
 const JSON_FLAGS      = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+// Walked only for code names (see skipped()), and only in the WordPress root's own wp-content for TOP_SKIPS.
 // upgrade-temp-backup: WordPress' rollback copies of updated plugins and themes (6.3+).
-const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages', 'upgrade-temp-backup' ];
+const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'upgrade-temp-backup' ];
 const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
-// WordPress core in a directory that holds wp-settings.php and wp-includes/: never scanned.
+// Core of the WordPress root (wp-settings.php and wp-includes/ in the scanned directory): never scanned.
 const CORE_DIRS       = [ 'wp-admin', 'wp-includes' ];
 const CORE_FILES      = [ 'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
 const TYPE_ORDER      = [ 'plugin' => 0, 'theme' => 1, 'mu-plugin' => 2, 'directory' => 3, 'other' => 4 ];
@@ -39,6 +40,11 @@ const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
 // File extensions checked as PHP code, matched case-insensitively.
 const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', 'engine', 'php5', 'php7' ];
+// Other files are read this far for a PHP open tag; one that has it later than the start and is larger than SNIFF_MAX isn't checked.
+const SNIFF_BYTES     = 8192;
+const SNIFF_MAX       = 1048576;
+// Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
+const MIXED_FLAG      = 0x80000000;
 // Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
 const CALIBRATION_RESERVE = 20;
 
@@ -76,6 +82,8 @@ final class Scanner {
 	private $rootReal;
 	/** @var array<string,bool> Directories holding WordPress core, by real path. */
 	private $coreDirs = [];
+	/** @var array<string,bool> Other WordPress installs whose core was met (and skipped), by real path. */
+	private $nested = [];
 	/** @var string[] Real paths of the releases a php site's `current` doesn't point to. */
 	private $oldReleases = [];
 	/** @var array<int,array<int,bool>> Visited directories by device and inode. */
@@ -194,9 +202,9 @@ final class Scanner {
 				$this->notChecked( $main['other'], './', 'unreadable' );
 				$main = null;
 			} else {
-				// Branch roots: other direct children holding plugins/ or themes/.
+				// Branch roots: other direct children holding plugins/ or themes/. languages/ has those for translations.
 				foreach ( $main['entries'] as $name ) {
-					if ( in_array( $name, STRUCTURAL, true ) ) {
+					if ( in_array( $name, STRUCTURAL, true ) || in_array( $name, $main['skips'], true ) || 'languages' === $name ) {
 						continue;
 					}
 					$path = $root . '/' . $name;
@@ -210,11 +218,11 @@ final class Scanner {
 		// Content dirs beside wp-content (a moved WP_CONTENT_DIR) are branch roots too, named by their path under /var/www.
 		$rest = [];
 		foreach ( $top as $name ) {
-			if ( 'wp-content' === $name || in_array( $name, ANY_SKIPS, true ) ) {
+			if ( 'wp-content' === $name ) {
 				continue;
 			}
 			$path = $wp . '/' . $name;
-			if ( $this->contentLike( $path ) ) {
+			if ( ! in_array( $name, ANY_SKIPS, true ) && $this->contentLike( $path ) ) {
 				$candidates[] = [ $this->relMount( $path ), $path, false ];
 			} else {
 				$rest[] = $name;
@@ -250,6 +258,11 @@ final class Scanner {
 		}
 		// Everything else in the WordPress directory but core: custom endpoints, a second app, a linked target's siblings.
 		$this->scanTop( $wp, $rest, $this->comp( 'directory', $this->relMount( $wp ), null, $wp ), $this->relMount( $wp ) . '/' );
+
+		// Core of another install isn't scanned (too large) but isn't silent either.
+		foreach ( array_keys( $this->nested ) as $dir ) {
+			$this->notChecked( $this->comp( 'directory', $this->relMount( $dir ), null, $dir ), './', 'nested_wordpress' );
+		}
 	}
 
 	/** A directory in scope holding plugins/ or themes/: a content root. */
@@ -417,24 +430,14 @@ final class Scanner {
 		return function_exists( 'posix_access' ) && ! @posix_access( $path ) && 13 === posix_get_last_error();
 	}
 
-	/** A content root's `other` component and its entries, top-level skips removed. */
+	/** A content root's `other` component, its entries and the names skipped in it (TOP_SKIPS only in the main wp-content). */
 	private function wpRoot( string $path, ?string $branch ): array {
-		$entries = $this->readDir( $path );
-		if ( null !== $entries ) {
-			$entries = array_values(
-				array_filter(
-					$entries,
-					static function ( $name ) {
-						return ! in_array( $name, TOP_SKIPS, true ) && ! in_array( $name, ANY_SKIPS, true );
-					}
-				)
-			);
-		}
 		return [
 			'path'    => $path,
 			'branch'  => $branch,
 			'other'   => $this->comp( 'other', '', $branch, $path ),
-			'entries' => $entries,
+			'entries' => $this->readDir( $path ),
+			'skips'   => null === $branch ? array_merge( TOP_SKIPS, ANY_SKIPS ) : ANY_SKIPS,
 			'plugins' => null,
 			'themes'  => null,
 		];
@@ -467,6 +470,10 @@ final class Scanner {
 	private function others( array $r, array $branches ): void {
 		foreach ( (array) $r['entries'] as $name ) {
 			$path = $r['path'] . '/' . $name;
+			if ( in_array( $name, $r['skips'], true ) ) {
+				$this->skipped( $path, $name, $r['other'] );
+				continue;
+			}
 			if ( in_array( $name, STRUCTURAL, true ) ) {
 				$loose = 'themes' === $name ? $r['themes'] : ( 'plugins' === $name ? $r['plugins'] : null );
 				if ( null !== $loose ) {
@@ -496,11 +503,9 @@ final class Scanner {
 			return [];
 		}
 
+		// A plugin dir named node_modules or .git is a plugin like any other.
 		$loose = [];
 		foreach ( $entries as $name ) {
-			if ( in_array( $name, ANY_SKIPS, true ) ) {
-				continue;
-			}
 			$path = $dir . '/' . $name;
 			$real = $this->resolve( $path );
 
@@ -518,6 +523,7 @@ final class Scanner {
 				continue;
 			}
 			if ( null !== $real && ! $this->isPhpName( $name ) ) {
+				$loose[] = $name; // Not code by name; `other` sniffs it.
 				continue;
 			}
 			if ( null === $real && ! $this->linkMatters( $path, $name ) ) {
@@ -549,9 +555,6 @@ final class Scanner {
 
 		$loose = [];
 		foreach ( $entries as $name ) {
-			if ( in_array( $name, ANY_SKIPS, true ) ) {
-				continue;
-			}
 			$path = $dir . '/' . $name;
 			$real = $this->resolve( $path );
 
@@ -576,10 +579,11 @@ final class Scanner {
 	 */
 	private function scanTop( string $root, array $entries, int $loose, string $prefix ): void {
 		foreach ( $entries as $name ) {
+			$path = $root . '/' . $name;
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
+				$this->skipped( $path, $name, $loose );
 				continue;
 			}
-			$path = $root . '/' . $name;
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
@@ -618,6 +622,7 @@ final class Scanner {
 
 		foreach ( $entries as $name ) {
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
+				$this->skipped( $dir . '/' . $name, $this->rel( $comp, $dir . '/' . $name ), $comp );
 				continue;
 			}
 			$this->visit( $dir . '/' . $name, $name, $comp );
@@ -646,9 +651,6 @@ final class Scanner {
 			return;
 		}
 
-		if ( ! $this->isPhpName( $name ) ) {
-			return;
-		}
 		$st = @stat( $real );
 		if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
 			return;
@@ -656,7 +658,27 @@ final class Scanner {
 		if ( isset( $this->seenFiles[ $st['dev'] ][ $st['ino'] ] ) ) {
 			return;
 		}
+
+		$mixed = false;
+		if ( ! $this->isPhpName( $name ) ) {
+			// A phar's code is in the archive, which PHPCS can't read; it starts with a `<?php` stub.
+			if ( $this->isPharName( $name ) ) {
+				$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
+				$this->notChecked( $comp, $this->rel( $comp, $path ), 'phar' );
+				return;
+			}
+			// Any name can be included. One PHP can't read can't run either, so it isn't reported.
+			$tag = $this->sniff( $real );
+			if ( null === $tag ) {
+				return;
+			}
+			$mixed = 'mixed' === $tag;
+		}
 		$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
+		if ( $mixed && $st['size'] > SNIFF_MAX ) {
+			$this->notChecked( $comp, $this->rel( $comp, $path ), 'php_tag' );
+			return;
+		}
 
 		if ( ! is_readable( $real ) ) {
 			$this->notChecked( $comp, $this->rel( $comp, $path ), 'unreadable' );
@@ -669,7 +691,7 @@ final class Scanner {
 		if ( $this->isScan ) {
 			// Relative to the component's base; the spool counts against the report cap too.
 			$rel   = $this->rel( $comp, $path );
-			$entry = pack( 'VPV', $comp, $st['size'], strlen( $rel ) ) . $rel;
+			$entry = pack( 'VPV', $comp, $st['size'], strlen( $rel ) | ( $mixed ? MIXED_FLAG : 0 ) ) . $rel;
 
 			$this->listBytes += strlen( $entry );
 			if ( $this->listBytes > $this->cfg['report_max'] ) {
@@ -680,6 +702,108 @@ final class Scanner {
 				$this->flushList();
 			}
 		}
+	}
+
+	/**
+	 * A directory skipped by name (uploads/, cache/, node_modules/, ...): only its code-named files are listed (no sniff),
+	 * e.g. Wordfence's wflogs/*.php. Past the bounds the directory is one not_checked entry instead.
+	 */
+	private function skipped( string $path, string $file, int $comp ): void {
+		// A link that dangles or leaves the mount can't be searched (uploads -> /mnt/... included).
+		if ( null === $this->resolve( $path ) ) {
+			$this->notChecked( $comp, $file . '/', 'unreadable' );
+			return;
+		}
+		if ( ! is_dir( $path ) ) {
+			$this->visit( $path, basename( $path ), $comp );
+			return;
+		}
+		$hits = $this->codeIn( $path );
+		if ( null === $hits ) {
+			$this->notChecked( $comp, $file . '/', 'skipped' );
+			return;
+		}
+		foreach ( $hits as $hit => $unlistable ) {
+			if ( $unlistable ) {
+				$this->notChecked( $comp, $this->rel( $comp, $hit ) . '/', 'unreadable' );
+			} else {
+				$this->visit( $hit, basename( $hit ), $comp );
+			}
+		}
+	}
+
+	/**
+	 * Code-named and .phar entries of a tree (and bad links that may be code), sorted, each => whether it is a
+	 * directory that can't be listed; null past COMPAT_SKIPPED_FILES files or COMPAT_SKIPPED_BYTES bytes.
+	 *
+	 * @return array<string,bool>|null
+	 */
+	private function codeIn( string $dir ): ?array {
+		$hits  = [];
+		$bytes = 0;
+		$seen  = [];
+		$stack = [ $dir ];
+		while ( $stack ) {
+			$d  = array_pop( $stack );
+			$st = @stat( $d );
+			if ( false === $st || isset( $seen[ $st['dev'] ][ $st['ino'] ] ) ) {
+				continue;
+			}
+			$seen[ $st['dev'] ][ $st['ino'] ] = true;
+
+			$handle = @opendir( $d );
+			if ( false === $handle ) {
+				$hits[ $d ] = true;
+				continue;
+			}
+			while ( false !== ( $name = readdir( $handle ) ) ) {
+				if ( '.' === $name || '..' === $name ) {
+					continue;
+				}
+				$this->tick();
+				$path = $d . '/' . $name;
+				// One stat for most entries: only directories and code or extension-less names need more.
+				if ( is_dir( $path ) ) {
+					if ( null === $this->resolve( $path ) ) {
+						$hits[ $path ] = false; // Leaves the mount: visit() reports it.
+					} else {
+						$stack[] = $path;
+					}
+					continue;
+				}
+				if ( $this->isPhpName( $name ) || $this->isPharName( $name ) ) {
+					$size = @filesize( $path );
+					$bytes += false === $size ? 0 : $size;
+				} elseif ( preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name ) || ! is_link( $path ) || null !== $this->resolve( $path ) ) {
+					continue;
+				}
+				$hits[ $path ] = false;
+				if ( count( $hits ) > $this->cfg['skipped_files'] || $bytes > $this->cfg['skipped_bytes'] ) {
+					closedir( $handle );
+					return null;
+				}
+			}
+			closedir( $handle );
+		}
+		ksort( $hits, SORT_STRING );
+		return $hits;
+	}
+
+	/**
+	 * A file without a code name: 'code' when it starts with a PHP open tag (after a BOM, whitespace or a #! line),
+	 * 'mixed' when one follows other text in its first SNIFF_BYTES, null otherwise or when it is binary (a NUL byte).
+	 */
+	private function sniff( string $real ): ?string {
+		$fh = open_regular( $real );
+		if ( null === $fh ) {
+			return null;
+		}
+		$head = fread( $fh, SNIFF_BYTES );
+		fclose( $fh );
+		if ( false === $head || false !== strpos( $head, "\0" ) || ! preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $head, $m, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+		return preg_match( '/\A(?:\xEF\xBB\xBF)?(?:#![^\n]*\n)?\s*\z/', substr( $head, 0, $m[0][1] ) ) ? 'code' : 'mixed';
 	}
 
 	/** Real path when it exists and stays inside the mount, else null. */
@@ -709,21 +833,30 @@ final class Scanner {
 		return $this->isCore( $real );
 	}
 
-	/** wp-admin/, wp-includes/ (and anything in them) and the core files beside them, wherever WordPress is installed. */
+	/**
+	 * wp-admin/, wp-includes/ (and anything in them) and the core files beside them, wherever WordPress is installed.
+	 * Only the WordPress root's core is out of scope silently; another install's is recorded for a nested_wordpress entry.
+	 */
 	private function isCore( string $real ): bool {
 		if ( 'wp' !== $this->cfg['site_type'] ) {
 			return false;
 		}
+		$install = null;
 		if ( in_array( basename( $real ), CORE_FILES, true ) && $this->coreDir( dirname( $real ) ) ) {
-			return true;
-		}
-		// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
-		for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
-			if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
-				return true;
+			$install = dirname( $real );
+		} else {
+			// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
+			for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
+				if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
+					$install = dirname( $p );
+					break;
+				}
 			}
 		}
-		return false;
+		if ( null !== $install && $install !== $this->rootReal ) {
+			$this->nested[ $install ] = true;
+		}
+		return null !== $install;
 	}
 
 	/** A directory holding wp-settings.php and wp-includes/. */
@@ -739,7 +872,7 @@ final class Scanner {
 	 * PHP files and (possible) directories; a broken `readme.txt` link isn't.
 	 */
 	private function linkMatters( string $path, string $name ): bool {
-		if ( $this->isPhpName( $name ) ) {
+		if ( $this->isPhpName( $name ) || $this->isPharName( $name ) ) {
 			return true;
 		}
 		$target = @realpath( $path );
@@ -752,6 +885,10 @@ final class Scanner {
 	/** PHP code: a name ending in one of CODE_EXTENSIONS, in any case. */
 	private function isPhpName( string $name ): bool {
 		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/i', $name );
+	}
+
+	private function isPharName( string $name ): bool {
+		return (bool) preg_match( '/\.phar\z/i', $name );
 	}
 
 	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
@@ -1006,7 +1143,7 @@ final class Scanner {
 		return $this->finish();
 	}
 
-	/** @return array{comp:int,size:int,path:string}|null */
+	/** @return array{comp:int,size:int,path:string,mixed:bool}|null */
 	private function nextFile(): ?array {
 		$head = fread( $this->listFh, 16 );
 		if ( '' === $head && feof( $this->listFh ) ) {
@@ -1016,11 +1153,12 @@ final class Scanner {
 			throw new ToolError( 'could not read the file list' );
 		}
 		$h   = unpack( 'Vcomp/Psize/Vlen', $head );
-		$rel = $h['len'] > 0 ? fread( $this->listFh, $h['len'] ) : '';
-		if ( false === $rel || strlen( $rel ) !== $h['len'] || ! isset( $this->comps[ $h['comp'] ] ) ) {
+		$len = $h['len'] & ~MIXED_FLAG;
+		$rel = $len > 0 ? fread( $this->listFh, $len ) : '';
+		if ( false === $rel || strlen( $rel ) !== $len || ! isset( $this->comps[ $h['comp'] ] ) ) {
 			throw new ToolError( 'could not read the file list' );
 		}
-		return [ 'comp' => $h['comp'], 'size' => $h['size'], 'path' => $this->comps[ $h['comp'] ]['base'] . '/' . $rel ];
+		return [ 'comp' => $h['comp'], 'size' => $h['size'], 'path' => $this->comps[ $h['comp'] ]['base'] . '/' . $rel, 'mixed' => 0 !== ( $h['len'] & MIXED_FLAG ) ];
 	}
 
 	/**
@@ -1177,10 +1315,23 @@ final class Scanner {
 			$this->spoolNotChecked( $comp, $rel, 'unparseable' );
 			return;
 		}
+		// Text before the tag (a README, a script with `<?php` in a string): an error may be on code that never runs.
+		$messages = null;
+		if ( $f['mixed'] ) {
+			$messages = [];
+			while ( null !== ( $m = $reader->message() ) ) {
+				if ( 'ERROR' === $m[2] && 0 !== strpos( $m[3], 'Internal.' ) ) {
+					$reader->skipMessages();
+					$this->spoolNotChecked( $comp, $rel, 'php_tag' );
+					return;
+				}
+				$messages[] = $m;
+			}
+		}
 
 		$errors = $warnings = 0;
 		$buf    = [ 'e' => '', 'w' => '' ];
-		while ( null !== ( $m = $reader->message() ) ) {
+		while ( null !== ( $m = null !== $messages ? array_shift( $messages ) : $reader->message() ) ) {
 			list( $line, , $type, $source, $text ) = $m;
 			if ( 0 === strpos( $source, 'Internal.' ) ) {
 				continue;
@@ -1889,6 +2040,8 @@ function parse_args( array $argv, array &$cfg ): void {
 	$cfg['low_factor']        = env_float( 'COMPAT_LOW_FACTOR', 0.8 );
 	$cfg['high_factor']       = env_float( 'COMPAT_HIGH_FACTOR', 1.5 );
 	$cfg['report_max']        = env_int( 'COMPAT_REPORT_MAX', REPORT_MAX, 1024 );
+	$cfg['skipped_files']     = env_int( 'COMPAT_SKIPPED_FILES', 2000 );
+	$cfg['skipped_bytes']     = env_int( 'COMPAT_SKIPPED_BYTES', 67108864 );
 	if ( $cfg['low_factor'] > 1 || $cfg['high_factor'] < 1 ) {
 		throw new BadArgs( 'COMPAT_LOW_FACTOR must be at most 1 and COMPAT_HIGH_FACTOR at least 1' );
 	}

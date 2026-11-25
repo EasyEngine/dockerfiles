@@ -248,9 +248,33 @@ estimate est-slashes "$WORK/wp" wp //var/www/htdocs//current 8.4
 scan badargs-dotdot "$WORK/wp" wp /var/www/../etc 8.4 600
 scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
 
-# WordPress' rollback copies in wp-content/upgrade-temp-backup/ aren't live code.
+# WordPress' rollback copies in wp-content/upgrade-temp-backup/: skipped as a dir, but their code files are checked.
 tempbackup_fixture "$WORK/tempbackup"
 scan tempbackup "$WORK/tempbackup" wp /var/www/htdocs 8.4 600
+
+# Nothing in scope is skipped silently: skipped dirs that hold code, content roots other than wp-content, plugin and theme
+# dirs named node_modules or .git, languages/, PHP under other names, phars, and other WordPress installs.
+skipdirs_fixture "$WORK/skipdirs"
+contentlike_fixture "$WORK/contentlike"
+pluginnm_fixture "$WORK/pluginnm"
+l10n_fixture "$WORK/l10n"
+sniff_fixture "$WORK/sniff"
+nested_fixture "$WORK/nested"
+wordfence_fixture "$WORK/wordfence"
+scan skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4 600
+scan skipdirs-files "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_FILES=7
+scan skipdirs-bytes "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_BYTES=40000
+scan wordfence "$WORK/wordfence" wp /var/www/htdocs 8.4 600
+estimate est-skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4
+scan skipdirs-php "$WORK/skipdirs" php /var/www/htdocs 8.4 600
+scan contentlike "$WORK/contentlike" wp /var/www/htdocs 8.4 600
+scan pluginnm "$WORK/pluginnm" wp /var/www/htdocs 8.4 600
+scan l10n "$WORK/l10n" wp /var/www/htdocs 8.4 600
+scan sniff "$WORK/sniff" wp /var/www/htdocs 8.4 600
+estimate est-sniff "$WORK/sniff" wp /var/www/htdocs 8.4
+scan sniff-php "$WORK/sniff" php /var/www/htdocs 8.4 600
+scan nested "$WORK/nested" wp /var/www/htdocs 8.4 600
+estimate est-nested "$WORK/nested" wp /var/www/htdocs 8.4
 
 # An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
 estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
