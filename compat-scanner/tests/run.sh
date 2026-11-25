@@ -310,6 +310,23 @@ scan phpdot-root "$WORK/phpdot-root" php /var/www/htdocs 8.4 600
 scan untrav "$WORK/untrav" wp /var/www/htdocs 8.4 600
 ENTRY_MEMORY=10M scan pharflood "$WORK/pharflood" wp /var/www/htdocs 8.4 600
 
+# r7: links into old releases and core are entries; links leaving /var/www by non-asset names; php home dot dirs (dot
+# links, dirs uid 33 can't open, links that don't resolve, their own time budget); the per-file cap; the STDIN copy cap.
+oldlink_fixture "$WORK/oldlink"
+corelink_fixture "$WORK/corelink"
+phphome_fixture "$WORK/phphome"
+homebudget_fixture "$WORK/homebudget"
+slowcode_fixture "$WORK/slowcode"
+bigstdin_fixture "$WORK/bigstdin"
+scan oldlink "$WORK/oldlink" php /var/www/htdocs/current/public 8.4 600
+scan corelink "$WORK/corelink" wp /var/www/htdocs 8.4 600
+scan phphome "$WORK/phphome" php /var/www/htdocs 8.4 600
+scan homebudget-skipped0 "$WORK/homebudget" php /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_SECONDS=0
+scan homebudget-home0 "$WORK/homebudget" php /var/www/htdocs 8.4 600 -e COMPAT_HOME_SECONDS=0
+scan slowcode "$WORK/slowcode" wp /var/www/htdocs 8.4 600 -e COMPAT_FILE_TIMEOUT=5 -e COMPAT_DEBUG=1
+scan bigstdin "$WORK/bigstdin" wp /var/www/htdocs 8.4 600
+estimate est-bigstdin "$WORK/bigstdin" wp /var/www/htdocs 8.4
+
 # An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
 estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
 

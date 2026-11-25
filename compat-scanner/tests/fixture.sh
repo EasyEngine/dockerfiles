@@ -160,11 +160,9 @@ $(for _ in $(seq 1 1100); do printf 'each( $a );\n'; done)"
 	ln -s plugins/legacy "$wc/alib"
 	ln -s plugins/hello.php "$wc/advanced-cache.php"
 
-	# Links to the WordPress directory, an ancestor or core: never scanned.
+	# Links to the WordPress directory or an ancestor: walked by their real path, no entry (links into core: corelink).
 	ln -s /var/www "$wc/zlib"
 	ln -s .. "$wc/core"
-	ln -s ../wp-includes "$wc/inc"
-	ln -s ../wp-settings.php "$wc/cfg.php"
 
 	# Top-level skips of the content root: only their code files are checked; with none they add nothing.
 	if [ "$errors" = 1 ]; then
@@ -346,7 +344,7 @@ each( \$a );"
 	ln -s ../../vendor/acme/plug-v "$wc/plugins/plug-v"
 	ln -s ../../shared/theme-in "$wc/themes/theme-in"
 	ln -s ../../shared/mu-link.php "$wc/mu-plugins/mu-link.php"
-	# Links to core stay out.
+	# Links into the root's core are unreadable entries (r7); into another install's core, its nested_wordpress entry.
 	ln -s ../wp-includes "$wc/inc"
 	ln -s ../wp/wp-load.php "$wc/load.php"
 	ln -s ../wp-includes/version.php "$wc/core-version.php"
@@ -716,5 +714,101 @@ pharflood_fixture() {
 	php_file "$1/htdocs/wp-content/plugins/p/p.php" '/* Plugin Name: P */'
 	mkdir -p "$d"
 	(cd "$d" && seq -f "f%06g-$(printf 'n%.0s' $(seq 1 100)).phar" 1 "$2" | xargs touch)
+	chmod -R a+rX "$1"
+}
+
+# oldlink_fixture <app-dir>: a php CI/CD site whose live release links into an old release (a reused vendor/, a file, a
+# relative dir) and shared/ links there too; previous -> releases/1 beside current is a release pointer, not an include.
+oldlink_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/releases/1/vendor/autoload.php" '$f = create_function( "", "" );'
+	php_file "$h/releases/1/h.php" 'each( $a );'
+	php_file "$h/releases/1/lib/l.php" 'each( $a );'
+	printf 'notes\n' > "$h/releases/1/notes.txt"
+	php_file "$h/releases/2/public/index.php" 'require "../vendor/autoload.php";'
+	ln -s /var/www/htdocs/releases/1/vendor "$h/releases/2/vendor"
+	ln -s ../1/h.php "$h/releases/2/h.php"
+	ln -s ../1/lib "$h/releases/2/lib"
+	ln -s ../1/notes.txt "$h/releases/2/notes.txt"
+	mkdir -p "$h/shared"
+	ln -s ../releases/1/vendor "$h/shared/vendor"
+	ln -s releases/2 "$h/current"
+	ln -s releases/1 "$h/previous"
+	chmod -R a+rX "$1"
+}
+
+# corelink_fixture <app-dir>: links from plugins into the WordPress root's core (a file, a dir, a whole plugin dir), and
+# non-code-named links leaving /var/www (lib.d dangles in the scanner, part reaches a file outside the mount).
+corelink_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	php_file "$h/wp-settings.php" '// core'
+	php_file "$h/wp-includes/version.php" '// core'
+	php_file "$h/wp-includes/custom/evil.php" '$f = create_function( "", "" );'
+	php_file "$h/wp-admin/includes/x.php" '// core'
+	printf 'x\n' > "$h/wp-includes/x.txt"
+	php_file "$wc/plugins/clean/clean.php" '/* Plugin Name: Clean */'
+	ln -s ../../../wp-includes/custom/evil.php "$wc/plugins/clean/boot.php"
+	ln -s ../../../wp-admin/includes "$wc/plugins/clean/inc"
+	ln -s ../../../wp-includes/x.txt "$wc/plugins/clean/v.txt"
+	ln -s ../../wp-includes/custom "$wc/plugins/coreplug"
+	php_file "$wc/plugins/lnk/lnk.php" '/* Plugin Name: Lnk */'
+	ln -s /usr/local/etc/php/mylib "$wc/plugins/lnk/lib.d"
+	ln -s /usr/local/etc/php/php.ini-production "$wc/plugins/lnk/part"
+	ln -s /dev/stdout "$wc/plugins/lnk/debug.log"
+	# Log sinks EE accepts: exactly /dev/null, /dev/stdout, /dev/stderr, whatever the name; /dev/shm isn't one.
+	ln -s /dev/stderr "$wc/plugins/lnk/error_log"
+	ln -s /dev/stdout "$wc/plugins/lnk/access"
+	ln -s /dev/null "$wc/plugins/lnk/trace"
+	ln -s /dev/shm/lib "$wc/plugins/lnk/shm"
+	ln -s /var/log/php/x.log "$wc/plugins/lnk/out.log"
+	ln -s /nowhere/readme.txt "$wc/plugins/lnk/readme.txt"
+	chmod -R a+rX "$1"
+}
+
+# phphome_fixture <app-dir>: php dot entries of /var/www that hold no code, a dot link to a sibling code dir, dirs uid 33
+# can't open (one empty), and a dangling code-named dot link.
+phphome_fixture() {
+	local a=$1
+	php_file "$a/htdocs/index.php" 'echo 1;'
+	php_file "$a/lib/l.php" 'echo 2;'
+	ln -s lib "$a/.rel-link"
+	mkdir -p "$a/.venv/bin" "$a/.config/chromium" "$a/.emptylocked" "$a/.locked2"
+	ln -s /usr/bin/python3-nowhere "$a/.venv/bin/python"
+	ln -s host-1234 "$a/.config/chromium/SingletonLock"
+	ln -s /nowhere/.bashrc "$a/.bashrc"
+	ln -s /nowhere/x.php "$a/.x.php"
+	php_file "$a/.locked2/f.php" 'each( $a );'
+	chmod -R a+rX "$a"
+	chmod 0700 "$a/.emptylocked" "$a/.locked2"
+}
+
+# homebudget_fixture <app-dir>: a php site with a code-free dot dir and a code-free node_modules beside the code.
+homebudget_fixture() {
+	local a=$1
+	php_file "$a/htdocs/index.php" 'echo 1;'
+	mkdir -p "$a/.cache" "$a/htdocs/node_modules/a"
+	printf 'data\n' > "$a/.cache/blob.bin"
+	printf 'readme\n' > "$a/htdocs/node_modules/a/readme"
+	chmod -R a+rX "$a"
+}
+
+# slowcode_fixture <app-dir>: a code-named file that keeps PHPCompatibility looping (an unterminated nested string, as in
+# PHPCS's own DoubleQuotedStringTest.inc), beside clean files and one with an error, all in one batch.
+slowcode_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	php_file "$p/a.php" 'echo 1;'
+	printf '<?php\n"${foo["${bar\n' > "$p/slow.php"
+	php_file "$p/z.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# bigstdin_fixture <app-dir>: files PHPCS reads through STDIN: a 2 MiB one with a finding on its last line, and one over
+# the copy cap (17 MiB, mostly a comment).
+bigstdin_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	{ printf '<?php\n'; for i in $(seq 1 40000); do printf '$a%d = 1; // padding padding\n' "$i"; done; printf 'each( $a );\n'; } > "$p/BIG.PHP"
+	{ printf '<?php\n/*\n'; head -c 17825792 /dev/zero | tr '\0' 'x'; printf '\n*/\neach( $a );\n'; } > "$p/HUGE.PHP"
 	chmod -R a+rX "$1"
 }
