@@ -28,6 +28,17 @@ nr_set_appname() {
     [[ -z "$last" || "$last" =~ $placeholder ]] || return 0
     nr_set 'newrelic\.appname' "newrelic.appname = \"$NEWRELIC_APPNAME\""
 }
+# The 8.1 image's ini turns off tracing, span events and log forwarding (newrelic-php-agent#577), and a php-fpm zip's ini doesn't:
+# add each of those keys the site's ini lacks, so a value set by hand stays. The other images' ini sets none of them.
+nr_add_image_defaults() {
+    local key line
+    for key in cross_application_tracer.enabled distributed_tracing_enabled span_events_enabled \
+        application_logging.enabled application_logging.forwarding.enabled application_logging.metrics.enabled; do
+        key="newrelic\\.${key//./\\.}"
+        line=$(grep -a "^[[:space:]]*$key[[:space:]]*=" /data/newrelic.ini | tail -n 1)
+        [[ -z "$line" ]] || grep -aq "^[[:space:]]*$key[[:space:]]*=" "$nr_ini" || nr_set "$key" "$line" || return
+    done
+}
 
 if [[ -z "${NEWRELIC_LICENSE_KEY:-}" ]] || [[ -z "${NEWRELIC_APPNAME:-}" ]]; then
     :
@@ -41,8 +52,8 @@ else
         warn "could not create $nr_ini, New Relic stays off"
     fi
     # The license is set by key, not by placeholder, so a changed key reaches an ini written on an earlier start.
-    if [[ -f "$nr_ini" ]] && ! { nr_set 'newrelic\.license' "newrelic.license = \"$NEWRELIC_LICENSE_KEY\"" && nr_set_appname; }; then
-        warn "could not write the New Relic license to $nr_ini"
+    if [[ -f "$nr_ini" ]] && ! { nr_set 'newrelic\.license' "newrelic.license = \"$NEWRELIC_LICENSE_KEY\"" && nr_set_appname && nr_add_image_defaults; }; then
+        warn "could not write the New Relic settings to $nr_ini"
     fi
 fi
 

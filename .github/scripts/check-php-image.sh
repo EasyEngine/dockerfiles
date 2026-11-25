@@ -107,6 +107,30 @@ out=$(NEWRELIC_APPNAME="ci\"app" start true 2>&1) || echo "a value with a quote 
 cmp -s /tmp/nr.ini "$ini" || echo "a value with a quote changed $ini"
 [ -n "$out" ] || echo "a value with a quote was refused silently"
 rm "$ini"; check "missing newrelic.ini" "$app2"
+# 8.1 turns off six agent features (newrelic-php-agent#577), also in a site ini without them (from a php-fpm zip), keeping a value set by hand; 8.2+ add none.
+export NR577="cross_application_tracer.enabled distributed_tracing_enabled span_events_enabled application_logging.enabled application_logging.forwarding.enabled application_logging.metrics.enabled"
+cat > /tmp/nr577.php <<"PHP"
+<?php
+foreach (explode(" ", getenv("NR577")) as $k) {
+	$v = ini_get("newrelic.$k");
+	if (getenv("NR_ON") === $k ? $v !== "1" : !in_array($v, ["", "0"], true)) echo "newrelic.$k reads ", var_export($v, true), "; ";
+}
+PHP
+ver=$(php -r "echo PHP_MAJOR_VERSION, \".\", PHP_MINOR_VERSION;")
+[ "$ver" = 8.1 ] && want="1 1 1 1 1 1" || want="0 0 0 0 0 0"
+lines577() { for k in $NR577; do grep -ac "^[[:space:]]*newrelic\.${k//./\\.}[[:space:]]*=" "$ini"; done | xargs; }
+strip577() { grep -av -E "^[[:space:]]*newrelic\.(cross_application_tracer\.enabled|distributed_tracing_enabled|span_events_enabled|application_logging\.(enabled|forwarding\.enabled|metrics\.enabled))[[:space:]]*=" "$ini" > /tmp/nr-strip.ini; cat /tmp/nr-strip.ini > "$ini"; }
+nr577() { # nr577 <label> [key set to true by hand]
+	out=$(NR_ON=${2:-} start php /tmp/nr577.php 2>&1)
+	[ "$ver" != 8.1 ] || [ -z "$out" ] || echo "$1: $out"
+	[ "$(lines577)" = "$want" ] || echo "$1: newrelic.ini sets the #577 keys $(lines577) times, want $want"
+}
+strip577; nr577 "ini without the #577 block"
+before="$(stat -c %i "$ini") $(cksum < "$ini")"; nr577 "restart without the #577 block"
+[ "$(stat -c %i "$ini") $(cksum < "$ini")" = "$before" ] || echo "a restart changed $ini after the #577 keys were added"
+if [ "$ver" = 8.1 ]; then
+	strip577; echo "newrelic.span_events_enabled = true" >> "$ini"; nr577 "span events set by hand" span_events_enabled
+fi
 fpm=$(start php-fpm -t 2>&1) || echo "php-fpm -t failed: $fpm"
 grep -Ei "warning|unable to load" <<<"$fpm" || true
 '
