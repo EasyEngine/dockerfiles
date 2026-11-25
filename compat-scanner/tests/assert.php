@@ -606,6 +606,7 @@ eq(
 	[
 		nc( 'plugin', 'p', null, '.git/', 'skipped' ),
 		nc( 'plugin', 'p', null, 'node_modules/', 'skipped' ),
+		nc( 'plugin', 'q', null, 'node_modules/', 'skipped' ),
 		nc( 'other', '', null, '.git/', 'skipped' ),
 		nc( 'other', '', null, 'cache/', 'skipped' ),
 		nc( 'other', '', null, 'node_modules/', 'skipped' ),
@@ -615,7 +616,7 @@ eq(
 		nc( 'directory', 'htdocs', null, '.git/', 'unreadable' ),
 		nc( 'directory', 'htdocs', null, 'node_modules/', 'skipped' ),
 	],
-	'skipdirs-time: with no time left for skipped dirs, each one holding code is a skipped entry'
+	'skipdirs-time: with no time left for skipped dirs, each one with anything in it is a skipped entry, code or not'
 );
 
 $sp = out( 'skipdirs-php' );
@@ -688,14 +689,15 @@ eq( [ $hg['status'] ?? null, field( $hg, 'safe_to_upgrade' ), $hg['files_checked
 eq( report( 'hang' )['not_checked'] ?? null, [ nc( 'plugin', 'p', null, 'views/hang.tpl', 'timeout' ) ], 'hang: it is a timeout entry after COMPAT_SNIFFED_TIMEOUT' );
 check( ( $hg['duration_s'] ?? 99 ) < 30, 'hang: the scan ends soon after the cap (' . ( $hg['duration_s'] ?? '?' ) . ' s)' );
 
-foreach ( [ 'cache' => 2505, 'cache50k' => 50005 ] as $name => $n ) {
+foreach ( [ 'cache' => 2506, 'cache50k' => 50006 ] as $name => $n ) {
 	$ca = out( $name );
-	eq( [ $ca['status'] ?? null, field( $ca, 'safe_to_upgrade' ), $ca['errors'] ?? null, $ca['files_checked'] ?? null, $ca['files_not_checked'] ?? null ], [ 'ok', false, 1, $n, 0 ], "$name: W3TC, WP Super Cache and Wordfence-style data files are checked without PHPCS; Docket Cache code is scanned" );
+	eq( [ $ca['status'] ?? null, field( $ca, 'safe_to_upgrade' ), $ca['errors'] ?? null, $ca['files_checked'] ?? null, $ca['files_not_checked'] ?? null ], [ 'ok', false, 1, $n, 0 ], "$name: W3TC, WP Super Cache and Wordfence-style data files are checked without PHPCS; Docket Cache code and a data file too large to read to the end are scanned" );
 	eq( finding_files( report( $name ) ), [ 'other:::cache/object/tail.php' ], "$name: a data header followed by another open tag is scanned" );
 	check( ( $ca['duration_s'] ?? 999 ) < 120, "$name: done in " . ( $ca['duration_s'] ?? '?' ) . ' s' );
 }
+check( 1 === preg_match_all( '/\] batch 4 files rc=/', raw( 'cache.stderr' ) ), 'cache: one PHPCS batch, of p.php, the Docket Cache file, tail.php and huge.php (data-only files take no run)' );
 $e = out( 'est-cache' );
-eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 2505, 2 ], 'est-cache: counts equal the scan' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 2506, 2 ], 'est-cache: counts equal the scan' );
 
 $el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
 eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );

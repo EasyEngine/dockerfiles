@@ -1,7 +1,7 @@
 <?php
 // Regenerates tests/wflogs with Wordfence's own WAF code: its bootstrap creates the files, its storage writes the
 // config, and its rule compiler writes rules.php from a small rule set (live sites download theirs).
-// Usage: docker run --rm --network none -v <wordfence plugin dir>:/wf:ro -v <out>:/out -v $PWD/tests:/t:ro \
+// Usage: docker run --rm --network none -v <wordfence plugin dir>:/wf:ro -v <out>:/out -v "$PWD/tests:/t:ro" \
 //          php:8.4.28-cli-alpine3.24 php /t/wflogs-gen.php
 $_SERVER['REQUEST_URI'] = '/?q=1'; $_SERVER['HTTP_HOST'] = 'example.test'; $_SERVER['REQUEST_METHOD'] = 'GET';
 $_SERVER['REMOTE_ADDR'] = '203.0.113.5'; $_SERVER['SCRIPT_FILENAME'] = '/site/index.php'; $_SERVER['DOCUMENT_ROOT'] = '/site';

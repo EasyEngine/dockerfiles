@@ -497,6 +497,8 @@ skipdirs_fixture() {
 	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
 	php_file "$wc/plugins/p/node_modules/pkg/x.php" 'each( $a );'
 	php_file "$wc/plugins/p/.git/y.php" 'each( $a );'
+	# No code in it: silent, unless the search budget is gone.
+	mkdir -p "$wc/plugins/q/node_modules/pkg" && printf 'module.exports = 1;\n' > "$wc/plugins/q/node_modules/pkg/index.js"
 	wflogs "$wc/uploads/wflogs"
 	php_file "$wc/uploads/2026/11/deep/shell.PHP" 'each( $a );'
 	printf 'GIF89a\0\0<?php each( $a );' > "$wc/uploads/2026/11/a.gif"
@@ -643,5 +645,7 @@ cache_fixture() {
 	printf "<?php exit('Access denied'); ?>\\n<html></html>" > "$wc/cache/supercache/page.php"
 	printf "<?php if(!\\\\defined('ABSPATH')){return false;}\\nreturn array('key'=>'k','group'=>'options','data'=>array('a'=>1));\\n/*@DOCKET_CACHE_EOF*/" > "$wc/cache/docket-cache/0a1b2c.php"
 	printf '<?php exit; ?>data\\n<?php each( $a );\\n' > "$wc/cache/object/tail.php"
+	# Too large to read to the end: scanned like other code, not counted as data.
+	{ printf '<?php exit; ?>'; head -c 9000000 /dev/zero | tr '\0' a; } > "$wc/cache/object/huge.php"
 	chmod -R a+rX "$1"
 }

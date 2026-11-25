@@ -44,6 +44,8 @@ const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', '
 // Other files are read this far for a PHP open tag; one that has it later than the start and is larger than SNIFF_MAX isn't checked.
 const SNIFF_BYTES     = 8192;
 const SNIFF_MAX       = 1048576;
+// A data-only candidate larger than this isn't read to the end: it is scanned (and counted) like other code.
+const DATA_MAX        = 8388608;
 // Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
 const MIXED_FLAG      = 0x80000000;
 // Never PHP templates, so not sniffed: docs, scripts and styles quote `<?php` (and one such file hangs a sniff).
@@ -798,6 +800,11 @@ final class Scanner {
 					continue;
 				}
 				$this->tick();
+				if ( microtime( true ) > $stop ) {
+					closedir( $handle );
+					$this->skippedBudget = 0.0;
+					return null;
+				}
 				$path = $d . '/' . $name;
 				// One stat for most entries: only directories and code or extension-less names need more.
 				if ( is_dir( $path ) ) {
@@ -846,6 +853,7 @@ final class Scanner {
 		$ok   = (bool) preg_match( '/\A(?:\xEF\xBB\xBF)?<\?php\s+(?:exit|die)\s*(?:\(\s*(?:\'[^\'\\\\]*\'|"[^"\\\\$]*"|\d+)?\s*\))?\s*;?\s*(__halt_compiler\s*\(\s*\)\s*;?\s*)?\?>/i', $head, $m );
 		if ( $ok && empty( $m[1] ) ) {
 			$rest = substr( $head, strlen( $m[0] ) );
+			$read = strlen( $head );
 			while ( true ) {
 				if ( preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $rest ) ) {
 					$ok = false;
@@ -853,6 +861,11 @@ final class Scanner {
 				}
 				$more = fread( $fh, 65536 );
 				if ( false === $more || '' === $more ) {
+					break;
+				}
+				$read += strlen( $more );
+				if ( $read > DATA_MAX ) {
+					$ok = false; // Not read to the end: never counted as checked unread.
 					break;
 				}
 				$rest = substr( $rest, -5 ) . $more; // A tag split across reads.
