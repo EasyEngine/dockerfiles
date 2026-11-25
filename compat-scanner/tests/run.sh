@@ -55,14 +55,18 @@ scan() {
 	docker rm -f "ee-php-compat-test-$name" > /dev/null 2>&1 || true
 	echo "$rc" > "$RES/$name.rc"
 	if [ -f "$out/report.json" ]; then cp "$out/report.json" "$RES/$name.report.json"; fi
-	# The manifest against the tree it describes, with the manifest's own rules (tests/manifest-check.php).
+	# The manifest against the tree it describes, with the manifest's own rules (tests/manifest-check.php): as uid 33,
+	# and as root with the default capabilities (DAC_OVERRIDE), which walks what uid 33 can't, as EE does.
 	if [ -f "$out/manifest.json" ]; then
 		cp "$out/manifest.json" "$RES/$name.manifest.json"
-		docker run --rm --network none --read-only --user 33:33 \
-			--mount "type=bind,src=$(realpath "$app"),dst=/var/www,readonly" \
-			--mount "type=bind,src=$out/manifest.json,dst=/m.json,readonly" \
-			--mount "type=bind,src=$HERE/manifest-check.php,dst=/t/manifest-check.php,readonly" \
-			--entrypoint php "$IMAGE" /t/manifest-check.php /m.json > "$RES/$name.mcheck" 2>&1 || true
+		local who
+		for who in 33 0; do
+			docker run --rm --network none --read-only --user "$who:$who" \
+				--mount "type=bind,src=$(realpath "$app"),dst=/var/www,readonly" \
+				--mount "type=bind,src=$out/manifest.json,dst=/m.json,readonly" \
+				--mount "type=bind,src=$HERE/manifest-check.php,dst=/t/manifest-check.php,readonly" \
+				--entrypoint php "$IMAGE" /t/manifest-check.php /m.json > "$RES/$name.mcheck$( [ "$who" = 0 ] && echo -root )" 2>&1 || true
+		done
 	fi
 	(cd "$out" && find . -mindepth 1 | LC_ALL=C sort) > "$RES/$name.outdir" 2>/dev/null || sudo sh -c "cd '$out' && find . -mindepth 1" > "$RES/$name.outdir"
 	echo "scan $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"

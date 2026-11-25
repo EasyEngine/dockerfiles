@@ -720,10 +720,14 @@ foreach ( glob( "$dir/*.stdout" ) as $f ) {
 		continue;
 	}
 	$manifests++;
-	$mc = json_decode( raw( "$name.mcheck" ), true );
-	check( is_array( $mc ), "$name: manifest checked (" . trim( substr( raw( "$name.mcheck" ), 0, 300 ) ) . ')' );
-	eq( $mc['problems'] ?? null, [], "$name: every code file is checked or under not_checked, or exempt" );
+	foreach ( [ 'mcheck' => 'uid 33', 'mcheck-root' => 'root' ] as $ext => $who ) {
+		$mc = json_decode( raw( "$name.$ext" ), true );
+		check( is_array( $mc ), "$name: manifest checked as $who (" . trim( substr( raw( "$name.$ext" ), 0, 300 ) ) . ')' );
+		eq( $mc['problems'] ?? null, [], "$name: every code file is checked or under not_checked, or exempt (walked as $who)" );
+	}
 	eq( [ $mc['checked'] ?? null, $mc['not_checked'] ?? null ], [ $doc['files_checked'], $doc['files_not_checked'] ], "$name: manifest counts equal files_checked and files_not_checked" );
+	$m = json_decode( raw( "$name.manifest.json" ), true );
+	eq( $m['excluded'] ?? null, [], "$name: manifest excluded is empty" );
 }
 check( $manifests >= 40, "manifests checked: $manifests" );
 $m = json_decode( raw( 'sniff.manifest.json' ), true );

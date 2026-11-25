@@ -1,7 +1,8 @@
 <?php
 // Checks a scan's /out/manifest.json against the fixture it scanned, mounted at /var/www as for the scan.
 // Every code file under the manifest's roots, by the manifest's own rules (code_extensions, phar_regex, sniff), must be
-// checked (same inode) or under not_checked, unless it is the scanned root's core, an old release or excluded.
+// checked (same inode) or under not_checked, unless it is the scanned root's core or an old release (`excluded` is not
+// an exemption). Run as uid 33, or as root with DAC_OVERRIDE to walk the whole tree as EE does.
 // Usage: php manifest-check.php <manifest.json>   Prints one JSON object: counts and problems.
 
 $m        = json_decode( (string) file_get_contents( $argv[1] ), true );
@@ -24,14 +25,37 @@ if ( ! is_array( $m ) || array_keys( $m ) !== $keys ) {
 	exit;
 }
 
-// A path that isn't UTF-8 is listed as `b64:` + base64 of its bytes.
-foreach ( [ 'checked', 'not_checked' ] as $list ) {
-	foreach ( $m[ $list ] as $i => $p ) {
-		if ( 0 === strpos( $p, 'b64:' ) ) {
-			$m[ $list ][ $i ] = base64_decode( substr( $p, 4 ), true );
+// A path that isn't UTF-8 is listed as `b64:` + base64 of its bytes, in the lists and in the head fields.
+$decode = static function ( $p ) {
+	return is_string( $p ) && 0 === strpos( $p, 'b64:' ) ? base64_decode( substr( $p, 4 ), true ) : $p;
+};
+foreach ( [ 'checked', 'not_checked', 'roots', 'excluded', 'old_releases' ] as $list ) {
+	$m[ $list ] = array_map( $decode, $m[ $list ] );
+}
+$m['sniff']['skipped_dirs'] = array_map( $decode, $m['sniff']['skipped_dirs'] );
+$m['core']['root']          = $decode( $m['core']['root'] );
+
+// uid 33 (gid 33, no other groups) may read the file: by mode bits, with search permission on every directory above it.
+$root      = 0 === posix_geteuid();
+$allows    = static function ( string $p, int $bit ): bool {
+	$st = @stat( $p );
+	if ( false === $st ) {
+		return false;
+	}
+	$shift = 33 === $st['uid'] ? 6 : ( 33 === $st['gid'] ? 3 : 0 );
+	return 0 !== ( $st['mode'] & ( $bit << $shift ) );
+};
+$readable = static function ( string $path ) use ( $root, $allows ): bool {
+	if ( ! $root ) {
+		return is_readable( $path );
+	}
+	for ( $d = dirname( $path ); strlen( $d ) > 1; $d = dirname( $d ) ) {
+		if ( ! $allows( $d, 1 ) ) {
+			return false;
 		}
 	}
-}
+	return $allows( $path, 4 );
+};
 
 $under = static function ( string $path, array $dirs ): bool {
 	foreach ( $dirs as $d ) {
@@ -77,9 +101,9 @@ foreach ( $m['checked'] as $p ) {
 $codeRe  = '/\.(?:' . implode( '|', array_map( 'preg_quote', $m['code_extensions'] ) ) . ')\z/' . ( $m['extensions_case_insensitive'] ? 'i' : '' );
 $sniff   = $m['sniff'];
 $core    = $m['core']['root'];
-$skipped = array_merge( $m['excluded'], $m['old_releases'] );
+$skipped = $m['old_releases'];
 
-$isCode = static function ( string $path, string $name ) use ( $codeRe, $m, $sniff, $under ): bool {
+$isCode = static function ( string $path, string $name ) use ( $codeRe, $m, $sniff, $under, $readable ): bool {
 	if ( preg_match( $codeRe, $name ) || preg_match( $m['phar_regex'], $name ) ) {
 		return true;
 	}
@@ -89,7 +113,7 @@ $isCode = static function ( string $path, string $name ) use ( $codeRe, $m, $sni
 	if ( in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), $sniff['exclude_extensions'], true ) ) {
 		return false;
 	}
-	$fh = @fopen( $path, 'rb' );
+	$fh = $readable( $path ) ? @fopen( $path, 'rb' ) : false;
 	if ( false === $fh ) {
 		return false; // uid 33 can't read it, so PHP-FPM can't run it.
 	}
