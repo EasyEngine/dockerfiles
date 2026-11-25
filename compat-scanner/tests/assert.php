@@ -637,18 +637,18 @@ eq( finding_files( $r ), [ 'plugin:p::bin/tool', 'plugin:p::views/admin.tpl', 'p
 eq(
 	$r['not_checked'] ?? null,
 	[
+		nc( 'plugin', 'p', null, 'a-lib.php', 'phar' ),
 		nc( 'plugin', 'p', null, 'big-mixed.txt', 'php_tag' ),
 		nc( 'plugin', 'p', null, 'gone.phar', 'unreadable' ),
-		nc( 'plugin', 'p', null, 'lib.phar', 'phar' ),
 		nc( 'plugin', 'p', null, 'views/page.html', 'php_tag' ),
 	],
-	'sniff: a phar, a dangling .phar link, and text with a later PHP tag that is too large or has findings'
+	'sniff: a phar, first reached through a .php link to it (listed once, as the link), a dangling .phar link, and text with a later PHP tag that is too large or has errors'
 );
 $e = out( 'est-sniff' );
 eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 10, 1 ], 'est-sniff: counts equal the scan' );
 $sp = out( 'sniff-php' );
 eq( [ $sp['status'] ?? null, field( $sp, 'safe_to_upgrade' ), $sp['errors'] ?? null, $sp['files_checked'] ?? null, $sp['files_not_checked'] ?? null ], [ 'ok', false, 3, 6, 4 ], 'sniff-php: the same on a php site' );
-eq( array_column( report( 'sniff-php' )['not_checked'] ?? [], 'reason' ), [ 'php_tag', 'unreadable', 'phar', 'php_tag' ], 'sniff-php: same not_checked reasons' );
+eq( array_column( report( 'sniff-php' )['not_checked'] ?? [], 'reason' ), [ 'phar', 'php_tag', 'unreadable', 'php_tag' ], 'sniff-php: same not_checked reasons' );
 
 $ne = out( 'nested' );
 $r  = report( 'nested' );

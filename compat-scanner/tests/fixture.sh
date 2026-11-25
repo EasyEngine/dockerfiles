@@ -501,6 +501,9 @@ skipdirs_fixture() {
 	php_file "$wc/uploads/2026/11/deep/shell.PHP" 'each( $a );'
 	printf 'GIF89a\0\0<?php each( $a );' > "$wc/uploads/2026/11/a.gif"
 	printf '<?php each( $a );' > "$wc/uploads/2026/11/not-sniffed.txt"
+	# Links out of scope inside a skipped dir are ignored there too: the WordPress dir and an ancestor.
+	ln -s ../../.. "$wc/uploads/2026/up"
+	ln -s /var/www "$wc/uploads/2026/www"
 	php_file "$wc/cache/object/c.php" 'each( $a );'
 	mkdir -p "$wc/upgrade" && printf '<?php __HALT_COMPILER();' > "$wc/upgrade/pkg.phar"
 	php_file "$wc/upgrade-temp-backup/plugins/old/old.php" '/* Plugin Name: Old */'
@@ -572,6 +575,7 @@ sniff_fixture() {
 	printf '\x89PNG\r\n\x1a\n\0\0\0\r<?php each( $a );' > "$p/logo.png"
 	printf '{"a": "<?xml version=1.0?>"}\n' > "$p/data.json"
 	printf '<?php __HALT_COMPILER();' > "$p/lib.phar"
+	ln -s lib.phar "$p/a-lib.php"
 	ln -s nowhere.phar "$p/gone.phar"
 	chmod -R a+rX "$1"
 }

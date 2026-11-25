@@ -659,14 +659,14 @@ final class Scanner {
 			return;
 		}
 
+		// A phar's code is in the archive, which PHPCS can't read (only its `<?php` stub); also behind a code-named link.
+		if ( $this->isPharName( $name ) || $this->isPharName( $real ) ) {
+			$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
+			$this->notChecked( $comp, $this->rel( $comp, $path ), 'phar' );
+			return;
+		}
 		$mixed = false;
 		if ( ! $this->isPhpName( $name ) ) {
-			// A phar's code is in the archive, which PHPCS can't read; it starts with a `<?php` stub.
-			if ( $this->isPharName( $name ) ) {
-				$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
-				$this->notChecked( $comp, $this->rel( $comp, $path ), 'phar' );
-				return;
-			}
 			// Any name can be included. One PHP can't read can't run either, so it isn't reported.
 			$tag = $this->sniff( $real );
 			if ( null === $tag ) {
@@ -710,9 +710,13 @@ final class Scanner {
 	 */
 	private function skipped( string $path, string $file, int $comp ): void {
 		// A link that dangles or leaves the mount can't be searched (uploads -> /mnt/... included).
-		if ( null === $this->resolve( $path ) ) {
+		$real = $this->resolve( $path );
+		if ( null === $real ) {
 			$this->notChecked( $comp, $file . '/', 'unreadable' );
 			return;
+		}
+		if ( ! $this->inScope( $path, $real ) ) {
+			return; // A link to an ancestor or to core, as anywhere else.
 		}
 		if ( ! is_dir( $path ) ) {
 			$this->visit( $path, basename( $path ), $comp );
@@ -764,9 +768,10 @@ final class Scanner {
 				$path = $d . '/' . $name;
 				// One stat for most entries: only directories and code or extension-less names need more.
 				if ( is_dir( $path ) ) {
-					if ( null === $this->resolve( $path ) ) {
+					$real = $this->resolve( $path );
+					if ( null === $real ) {
 						$hits[ $path ] = false; // Leaves the mount: visit() reports it.
-					} else {
+					} elseif ( $this->inScope( $path, $real ) ) {
 						$stack[] = $path;
 					}
 					continue;
@@ -1329,9 +1334,9 @@ final class Scanner {
 			}
 		}
 
-		$errors = $warnings = 0;
+		$errors = $warnings = $i = 0;
 		$buf    = [ 'e' => '', 'w' => '' ];
-		while ( null !== ( $m = null !== $messages ? array_shift( $messages ) : $reader->message() ) ) {
+		while ( null !== ( $m = null !== $messages ? ( $messages[ $i++ ] ?? null ) : $reader->message() ) ) {
 			list( $line, , $type, $source, $text ) = $m;
 			if ( 0 === strpos( $source, 'Internal.' ) ) {
 				continue;
