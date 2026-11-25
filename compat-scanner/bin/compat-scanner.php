@@ -114,6 +114,8 @@ final class Scanner {
 	private $stdinFiles = 0;
 	/** @var float Seconds left for searching skipped directories. */
 	private $skippedBudget = 0.0;
+	/** @var bool Listing the code files found in a skipped directory (where caches keep data-only files). */
+	private $inSkipped = false;
 
 	/** @var string */
 	private $work = '';
@@ -702,7 +704,8 @@ final class Scanner {
 			return;
 		}
 
-		if ( ! $mixed && $this->dataOnly( $real ) ) {
+		// Only in skipped dirs: elsewhere one more open per code file would slow every listing for little gain.
+		if ( $this->inSkipped && ! $mixed && $this->dataOnly( $real ) ) {
 			// Execution stops at the exit: nothing PHPCS could flag runs.
 			$c = &$this->comps[ $comp ];
 			$c['listed']++;
@@ -759,6 +762,7 @@ final class Scanner {
 			$this->notChecked( $comp, $file . '/', 'skipped' );
 			return;
 		}
+		$this->inSkipped = true;
 		foreach ( $hits as $hit => $unlistable ) {
 			if ( $unlistable ) {
 				$this->notChecked( $comp, $this->rel( $comp, $hit ) . '/', 'unreadable' );
@@ -766,6 +770,7 @@ final class Scanner {
 				$this->visit( $hit, basename( $hit ), $comp );
 			}
 		}
+		$this->inSkipped = false;
 	}
 
 	/**

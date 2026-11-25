@@ -278,7 +278,7 @@ scan nested "$WORK/nested" wp /var/www/htdocs 8.4 600
 hang_fixture "$WORK/hang"
 cache_fixture "$WORK/cache" 2500
 cache_fixture "$WORK/cache50k" 50000
-scan hang "$WORK/hang" wp /var/www/htdocs 8.4 120 -e COMPAT_SNIFFED_TIMEOUT=3
+scan hang "$WORK/hang" wp /var/www/htdocs 8.4 120 -e COMPAT_SNIFFED_TIMEOUT=1
 scan cache "$WORK/cache" wp /var/www/htdocs 8.4 600 -e COMPAT_DEBUG=1
 estimate est-cache "$WORK/cache" wp /var/www/htdocs 8.4
 scan cache50k "$WORK/cache50k" wp /var/www/htdocs 8.4 600

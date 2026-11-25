@@ -685,9 +685,13 @@ $e = out( 'est-nested' );
 eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 7, 3 ], 'est-nested: counts equal the scan' );
 
 $hg = out( 'hang' );
-eq( [ $hg['status'] ?? null, field( $hg, 'safe_to_upgrade' ), $hg['files_checked'] ?? null, $hg['files_not_checked'] ?? null ], [ 'ok', null, 1, 1 ], 'hang: a sniffed file whose PHPCS run never ends doesn\'t hang the scan' );
-eq( report( 'hang' )['not_checked'] ?? null, [ nc( 'plugin', 'p', null, 'views/hang.tpl', 'timeout' ) ], 'hang: it is a timeout entry after COMPAT_SNIFFED_TIMEOUT' );
-check( ( $hg['duration_s'] ?? 99 ) < 30, 'hang: the scan ends soon after the cap (' . ( $hg['duration_s'] ?? '?' ) . ' s)' );
+$r  = report( 'hang' );
+eq( [ $hg['status'] ?? null, field( $hg, 'safe_to_upgrade' ) ], [ 'ok', null ], 'hang: sniffed files that outrun their cap don\'t stop the scan' );
+check( in_array( nc( 'plugin', 'p', null, 'views/slow.tpl', 'timeout' ), $r['not_checked'] ?? [], true ), 'hang: slow.tpl is a timeout entry after COMPAT_SNIFFED_TIMEOUT' );
+// hang.tpl hangs this PHPCompatibility; a release that fixes that may check it or make it php_tag instead.
+$others = array_values( array_filter( $r['not_checked'] ?? [], static function ( $n ) { return 'views/slow.tpl' !== $n['file']; } ) );
+check( [] === $others || ( 1 === count( $others ) && 'views/hang.tpl' === $others[0]['file'] && in_array( $others[0]['reason'], [ 'timeout', 'php_tag' ], true ) ), 'hang: hang.tpl is timeout, php_tag or checked (' . json_encode( $others ) . ')' );
+check( ( $hg['duration_s'] ?? 99 ) < 30, 'hang: the scan ends soon after the caps (' . ( $hg['duration_s'] ?? '?' ) . ' s)' );
 
 foreach ( [ 'cache' => 2506, 'cache50k' => 50006 ] as $name => $n ) {
 	$ca = out( $name );

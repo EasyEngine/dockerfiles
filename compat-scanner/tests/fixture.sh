@@ -607,12 +607,14 @@ each( $a );'
 	chmod -R a+rX "$1"
 }
 
-# hang_fixture <app-dir>: a template whose PHPCS run never ends (from CodeMirror's mode/php/test.js, MIT; PHPCS reads
-# `<?php]` as a short open tag). Its run is capped by COMPAT_SNIFFED_TIMEOUT instead of hanging the scan.
+# hang_fixture <app-dir>: sniffed templates whose PHPCS run is cut by COMPAT_SNIFFED_TIMEOUT: a slow one, and one that
+# hangs PHPCompatibility 10.0.0-alpha3 (from CodeMirror's mode/php/test.js, MIT; PHPCS reads `<?php]` as a short tag).
 hang_fixture() {
 	local p="$1/htdocs/wp-content/plugins/p"
 	php_file "$p/p.php" '/* Plugin Name: P */'
 	mkdir -p "$p/views"
+	# Deterministic: plain PHP under a template name that takes PHPCS far longer than the 1 s cap the test sets.
+	{ printf '<?php\n'; for i in $(seq 1 40000); do printf '$a%d = array( 1, 2, 3 ) + [ %d ];\n' "$i" "$i"; done; } > "$p/views/slow.tpl"
 	cat > "$p/views/hang.tpl" <<'TPL'
 <p>
 <?php ?>
