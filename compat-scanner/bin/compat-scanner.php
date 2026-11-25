@@ -46,7 +46,8 @@ const SNIFF_BYTES     = 8192;
 const SNIFF_MAX       = 1048576;
 // A data-only candidate larger than this isn't read to the end: it is scanned (and counted) like other code.
 const DATA_MAX        = 8388608;
-// A file PHPCS reads through STDIN is copied to /out first; past this it isn't (real PHP code of 8 MiB already exceeds 960M).
+// A file PHPCS reads through STDIN is copied to /out first; past this it is refused by size (`memory`), not copied.
+// Real PHP code of 8 MiB already exceeds 960M, though a mostly-comment file that large could be checked.
 const STDIN_MAX       = 16777216;
 // Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
 const MIXED_FLAG      = 0x80000000;
@@ -1553,7 +1554,7 @@ final class Scanner {
 	/** Steps 2 to 4 for one file. */
 	private function runSingle( array $f ): void {
 		if ( $f['stdin'] && $f['size'] > STDIN_MAX ) {
-			// Not copied to /out: PHPCS would run out of memory on it anyway.
+			// Refused by size, not copied to /out (real code this large exceeds the retry memory).
 			$this->spoolNotChecked( $f['comp'], $this->rel( $f['comp'], $f['path'] ), 'memory' );
 			return;
 		}

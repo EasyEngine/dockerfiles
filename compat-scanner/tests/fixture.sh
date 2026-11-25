@@ -734,6 +734,8 @@ oldlink_fixture() {
 	ln -s ../releases/1/vendor "$h/shared/vendor"
 	ln -s releases/2 "$h/current"
 	ln -s releases/1 "$h/previous"
+	# A top-level link into the old release (scanTop).
+	ln -s releases/1/vendor "$h/vend"
 	chmod -R a+rX "$1"
 }
 
@@ -751,6 +753,13 @@ corelink_fixture() {
 	ln -s ../../../wp-admin/includes "$wc/plugins/clean/inc"
 	ln -s ../../../wp-includes/x.txt "$wc/plugins/clean/v.txt"
 	ln -s ../../wp-includes/custom "$wc/plugins/coreplug"
+	# The other walk sites: a theme dir, mu-plugins itself, a skipped name, and links found in a skipped dir.
+	mkdir -p "$wc/themes" "$wc/uploads"
+	ln -s ../../wp-includes/custom "$wc/themes/t"
+	ln -s ../wp-includes/custom "$wc/mu-plugins"
+	ln -s ../wp-includes/custom "$wc/cache"
+	ln -s ../../wp-includes/custom "$wc/uploads/d"
+	ln -s ../../wp-includes/custom/evil.php "$wc/uploads/x.php"
 	php_file "$wc/plugins/lnk/lnk.php" '/* Plugin Name: Lnk */'
 	ln -s /usr/local/etc/php/mylib "$wc/plugins/lnk/lib.d"
 	ln -s /usr/local/etc/php/php.ini-production "$wc/plugins/lnk/part"
