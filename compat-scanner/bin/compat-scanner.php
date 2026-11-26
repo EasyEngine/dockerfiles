@@ -22,13 +22,15 @@ const PHPCS_BIN       = TOOL_DIR . '/vendor/squizlabs/php_codesniffer/bin/phpcs'
 const REPORT_CLASS    = TOOL_DIR . '/src/LinesReport.php';
 const CALIBRATION_DIR = TOOL_DIR . '/calibration';
 const JSON_FLAGS      = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+// Walked only for code names (see skipped()), and only in the WordPress root's own wp-content for TOP_SKIPS.
 // upgrade-temp-backup: WordPress' rollback copies of updated plugins and themes (6.3+).
-const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'languages', 'upgrade-temp-backup' ];
+const TOP_SKIPS       = [ 'uploads', 'cache', 'upgrade', 'upgrade-temp-backup' ];
 const ANY_SKIPS       = [ 'node_modules', '.git' ];
 const STRUCTURAL      = [ 'plugins', 'themes', 'mu-plugins' ];
-// WordPress core in a directory that holds wp-settings.php and wp-includes/: never scanned.
+// Core of the WordPress root (wp-settings.php and wp-includes/ in the scanned directory): never scanned.
 const CORE_DIRS       = [ 'wp-admin', 'wp-includes' ];
-const CORE_FILES      = [ 'index.php', 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
+// index.php isn't here: it is tiny, and EE validates the root's own loader too.
+const CORE_FILES      = [ 'wp-activate.php', 'wp-blog-header.php', 'wp-comments-post.php', 'wp-config-sample.php', 'wp-cron.php', 'wp-links-opml.php', 'wp-load.php', 'wp-login.php', 'wp-mail.php', 'wp-settings.php', 'wp-signup.php', 'wp-trackback.php', 'xmlrpc.php' ];
 const TYPE_ORDER      = [ 'plugin' => 0, 'theme' => 1, 'mu-plugin' => 2, 'directory' => 3, 'other' => 4 ];
 // Same as EE's REPORT_MAX: EE rejects a larger report anyway.
 const REPORT_MAX      = 134217728;
@@ -39,6 +41,21 @@ const LINE_MAX        = 1048576;
 const BUFFER_MAX      = 262144;
 // File extensions checked as PHP code, matched case-insensitively.
 const CODE_EXTENSIONS = [ 'php', 'inc', 'phtml', 'module', 'install', 'theme', 'engine', 'php5', 'php7' ];
+// Other files are read this far for a PHP open tag; one that has it later than the start and is larger than SNIFF_MAX isn't checked.
+const SNIFF_BYTES     = 8192;
+const SNIFF_MAX       = 1048576;
+// A data-only candidate larger than this isn't read to the end: it is scanned (and counted) like other code.
+const DATA_MAX        = 8388608;
+// A file PHPCS reads through STDIN is copied to /out first; past this it is refused by size (`memory`), not copied.
+// Real PHP code of 8 MiB already exceeds 960M, though a mostly-comment file that large could be checked.
+const STDIN_MAX       = 16777216;
+// Bit of a file list entry's length field: the file has a PHP tag after other text, so its findings can't be trusted.
+const MIXED_FLAG      = 0x80000000;
+// What sniff() matches in a file's first SNIFF_BYTES, as one regex (no NUL anywhere, then an open tag), for the manifest.
+const SNIFF_REGEX     = '/\\A(?=[^\\x00]*\\z)[\\s\\S]*?<\\?(?:php(?:\\s|\\z)|=)/i';
+const PHAR_REGEX      = '/\\.phar(?:\\.(?:tar|zip))?(?:\\.(?:gz|bz2))?\\z/i';
+// Never PHP templates, so not sniffed: docs, scripts and styles quote `<?php` (and one such file hangs a sniff).
+const NO_SNIFF_EXTENSIONS = [ 'md', 'markdown', 'txt', 'rst', 'js', 'mjs', 'cjs', 'jsx', 'ts', 'tsx', 'map', 'json', 'css', 'scss', 'sass', 'less', 'svg', 'xml', 'yml', 'yaml', 'lock', 'csv', 'po', 'pot', 'mo', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'bmp', 'tif', 'tiff', 'woff', 'woff2', 'ttf', 'otf', 'eot', 'pdf', 'zip', 'gz', 'tgz', 'bz2', 'xz' ];
 // Estimate time kept for calibration (two PHPCS runs, ~5 s on one CPU); at most a quarter of the deadline.
 const CALIBRATION_RESERVE = 20;
 
@@ -76,6 +93,8 @@ final class Scanner {
 	private $rootReal;
 	/** @var array<string,bool> Directories holding WordPress core, by real path. */
 	private $coreDirs = [];
+	/** @var array<string,bool> Other WordPress installs whose core was met (and skipped), by real path. */
+	private $nested = [];
 	/** @var string[] Real paths of the releases a php site's `current` doesn't point to. */
 	private $oldReleases = [];
 	/** @var array<int,array<int,bool>> Visited directories by device and inode. */
@@ -93,6 +112,24 @@ final class Scanner {
 	private $listedBytes = 0;
 	/** @var int */
 	private $notCheckedCount = 0;
+	/** @var int Data-only files (`<?php exit; ?>` + data), checked at listing without PHPCS. */
+	private $dataFiles = 0;
+	/** @var int */
+	private $dataBytes = 0;
+	/** @var int Listed files PHPCS reads through STDIN, one run each (for the estimate). */
+	private $stdinFiles = 0;
+	/** @var float Seconds left for searching skipped directories. */
+	private $skippedBudget = 0.0;
+	/** @var float Seconds left for searching a php site's dot dirs of /var/www (their own budget). */
+	private $homeBudget = 0.0;
+	/** @var bool Listing the code files found in a skipped directory (where caches keep data-only files). */
+	private $inSkipped = false;
+	/** @var array<string,string> Manifest spools (`checked`, `not_checked`) not yet written, by name. */
+	private $manBuf = [ 'checked' => '', 'not_checked' => '' ];
+	/** @var int */
+	private $manBytes = 0;
+	/** @var string[] Real paths (with `/`) of the directories searched by name only, where nothing is sniffed. */
+	private $skippedDirs = [];
 
 	/** @var string */
 	private $work = '';
@@ -114,6 +151,8 @@ final class Scanner {
 		$this->timeoutLabel = $limit;
 		$this->deadline     = $this->start + $limit;
 		$this->listDeadline = $this->isScan ? $this->deadline : $this->deadline - min( CALIBRATION_RESERVE, $limit / 4 );
+		$this->skippedBudget = (float) $cfg['skipped_seconds'];
+		$this->homeBudget    = (float) $cfg['home_seconds'];
 	}
 
 	public function run(): array {
@@ -131,7 +170,7 @@ final class Scanner {
 		}
 		$this->listFiles();
 
-		if ( 0 === $this->listedFiles && 0 === $this->notCheckedCount ) {
+		if ( 0 === $this->listedFiles && 0 === $this->notCheckedCount && 0 === $this->dataFiles ) {
 			$this->removeWork();
 			return $this->reduced( 'no_code_found' );
 		}
@@ -194,9 +233,9 @@ final class Scanner {
 				$this->notChecked( $main['other'], './', 'unreadable' );
 				$main = null;
 			} else {
-				// Branch roots: other direct children holding plugins/ or themes/.
+				// Branch roots: other direct children holding plugins/ or themes/. languages/ has those for translations.
 				foreach ( $main['entries'] as $name ) {
-					if ( in_array( $name, STRUCTURAL, true ) ) {
+					if ( in_array( $name, STRUCTURAL, true ) || in_array( $name, $main['skips'], true ) || 'languages' === $name ) {
 						continue;
 					}
 					$path = $root . '/' . $name;
@@ -210,11 +249,11 @@ final class Scanner {
 		// Content dirs beside wp-content (a moved WP_CONTENT_DIR) are branch roots too, named by their path under /var/www.
 		$rest = [];
 		foreach ( $top as $name ) {
-			if ( 'wp-content' === $name || in_array( $name, ANY_SKIPS, true ) ) {
+			if ( 'wp-content' === $name ) {
 				continue;
 			}
 			$path = $wp . '/' . $name;
-			if ( $this->contentLike( $path ) ) {
+			if ( ! in_array( $name, ANY_SKIPS, true ) && $this->contentLike( $path ) ) {
 				$candidates[] = [ $this->relMount( $path ), $path, false ];
 			} else {
 				$rest[] = $name;
@@ -250,6 +289,11 @@ final class Scanner {
 		}
 		// Everything else in the WordPress directory but core: custom endpoints, a second app, a linked target's siblings.
 		$this->scanTop( $wp, $rest, $this->comp( 'directory', $this->relMount( $wp ), null, $wp ), $this->relMount( $wp ) . '/' );
+
+		// Core of another install isn't scanned (too large) but isn't silent either.
+		foreach ( array_keys( $this->nested ) as $dir ) {
+			$this->notChecked( $this->comp( 'directory', $this->relMount( $dir ), null, $dir ), './', 'nested_wordpress' );
+		}
 	}
 
 	/** A directory in scope holding plugins/ or themes/: a content root. */
@@ -278,7 +322,8 @@ final class Scanner {
 		$this->markDir( $real );
 		$entries = $this->readDir( $wp );
 		if ( null === $entries ) {
-			$this->notChecked( $this->comp( 'other', '', null, $wp . '/wp-content' ), './', 'unreadable' );
+			// Reported as wp-content's root, as before; in the manifest it is the WordPress directory that can't be listed.
+			$this->notChecked( $this->comp( 'other', '', null, $wp . '/wp-content' ), './', 'unreadable', $real . '/' );
 		}
 		return $entries;
 	}
@@ -299,10 +344,7 @@ final class Scanner {
 		return true;
 	}
 
-	/**
-	 * Php sites: what lies in /var/www beside htdocs (code above the public dir).
-	 * Dot entries are the www-data user's home (Composer and WP-CLI caches), not site code.
-	 */
+	/** Php sites: what lies in /var/www beside htdocs (code above the public dir). */
 	private function scanBeside(): void {
 		$this->markDir( MOUNT_ROOT );
 		$loose   = $this->comp( 'directory', '..', null, MOUNT_ROOT );
@@ -311,15 +353,124 @@ final class Scanner {
 			$this->notChecked( $loose, './', 'unreadable' );
 			return;
 		}
-		$entries = array_values(
-			array_filter(
-				$entries,
-				static function ( $name ) {
-					return 'htdocs' !== $name && '.' !== $name[0];
+		$links = [];
+		foreach ( $entries as $name ) {
+			if ( 'htdocs' === $name ) {
+				continue;
+			}
+			$path = MOUNT_ROOT . '/' . $name;
+			if ( '.' !== $name[0] || in_array( $name, ANY_SKIPS, true ) ) {
+				$this->scanTop( MOUNT_ROOT, [ $name ], $loose, '../' );
+				continue;
+			}
+			$real = $this->resolve( $path );
+			if ( is_link( $path ) ) {
+				// Home rule: a dot link that doesn't resolve counts only by a code name (dotfile managers, tool links).
+				if ( null === $real ? $this->isPhpName( $name ) || $this->isPharName( $name ) : ! is_dir( $real ) ) {
+					$this->scanTop( MOUNT_ROOT, [ $name ], $loose, '../' );
+				} elseif ( null !== $real ) {
+					$links[] = $name;
 				}
-			)
-		);
-		$this->scanTop( MOUNT_ROOT, $entries, $loose, '../' );
+			} elseif ( null !== $real && is_dir( $real ) && ! $this->holdsRoot( $real ) && ! $this->outOfScope( $real ) ) {
+				$this->homeDir( $path, $name, $loose );
+			} else {
+				// A dot dir holding the scan root is walked like any directory above it (the root itself gives nothing); dot files are site code.
+				$this->scanTop( MOUNT_ROOT, [ $name ], $loose, '../' );
+			}
+		}
+		// A dot link to a directory: after the rest, so a target walked by its own name gives nothing more. One into a
+		// dot dir of /var/www is that dir's business.
+		foreach ( $links as $name ) {
+			$real = (string) $this->resolve( MOUNT_ROOT . '/' . $name );
+			$top  = strstr( substr( $real . '/', strlen( MOUNT_ROOT ) + 1 ), '/', true );
+			if ( MOUNT_ROOT === $real || '.' !== $top[0] || in_array( $top, ANY_SKIPS, true ) ) {
+				$this->scanTop( MOUNT_ROOT, [ $name ], $loose, '../' );
+			}
+		}
+	}
+
+	/**
+	 * A dot dir of /var/www, the www-data user's home (Composer and WP-CLI caches): tool code, not the site's, so it
+	 * isn't scanned. It is one `skipped` entry when it holds a code file (by name or sniff, as the manifest defines one),
+	 * or one `unreadable` entry when part of it can't be searched.
+	 */
+	private function homeDir( string $path, string $name, int $comp ): void {
+		$reason = $this->homeCode( $path );
+		if ( null !== $reason ) {
+			$this->notChecked( $comp, $name . '/', $reason );
+		}
+	}
+
+	/**
+	 * 'skipped' when a home dot dir holds a code file, stopping at the first, or its search outruns the budget all dot
+	 * dirs share (COMPAT_HOME_SECONDS, apart from the skipped dirs' one); 'unreadable' when part of it can't be
+	 * searched; else null. A link that doesn't resolve counts only by a code name (home rule).
+	 */
+	private function homeCode( string $dir ): ?string {
+		$seen       = [];
+		$stack      = [ $dir ];
+		$stop       = microtime( true ) + $this->homeBudget;
+		$found      = false;
+		$unreadable = false;
+		while ( $stack && ! $found ) {
+			$d  = array_pop( $stack );
+			$st = @stat( $d );
+			if ( false === $st || isset( $seen[ $st['dev'] ][ $st['ino'] ] ) ) {
+				continue;
+			}
+			$seen[ $st['dev'] ][ $st['ino'] ] = true;
+
+			$handle = @opendir( $d );
+			if ( false === $handle ) {
+				$unreadable = true;
+				continue;
+			}
+			if ( ! $this->searchable( $d ) ) {
+				$unreadable = $unreadable || $this->hasEntries( $handle );
+				closedir( $handle );
+				continue;
+			}
+			while ( ! $found && false !== ( $name = readdir( $handle ) ) ) {
+				if ( '.' === $name || '..' === $name ) {
+					continue;
+				}
+				$this->tick();
+				if ( microtime( true ) > $stop ) {
+					$found = true;
+					break;
+				}
+				$path = $d . '/' . $name;
+				// One lstat for most entries; only links are resolved.
+				$lst = @lstat( $path );
+				if ( false === $lst ) {
+					continue;
+				}
+				$type = $lst['mode'] & 0170000;
+				$real = $path;
+				if ( 0120000 === $type ) {
+					$real = $this->resolve( $path );
+					if ( null === $real ) {
+						$found = $this->isPhpName( $name ) || $this->isPharName( $name );
+						continue;
+					}
+					$type = is_dir( $real ) ? 0040000 : ( is_file( $real ) ? 0100000 : 0 );
+				}
+				if ( 0040000 === $type ) {
+					// A real subdir is in scope with its parent; a link is checked by its target.
+					if ( $real === $path || ! $this->outOfScope( $real ) ) {
+						$stack[] = $path;
+					}
+				} elseif ( 0100000 === $type ) {
+					$found = $this->codeLike( $name, $real );
+				}
+			}
+			closedir( $handle );
+		}
+		$this->homeBudget = max( 0.0, $stop - microtime( true ) );
+		if ( $found ) {
+			return 'skipped';
+		}
+		return $unreadable ? 'unreadable' : null;
 	}
 
 	/**
@@ -417,24 +568,14 @@ final class Scanner {
 		return function_exists( 'posix_access' ) && ! @posix_access( $path ) && 13 === posix_get_last_error();
 	}
 
-	/** A content root's `other` component and its entries, top-level skips removed. */
+	/** A content root's `other` component, its entries and the names skipped in it (TOP_SKIPS only in the main wp-content). */
 	private function wpRoot( string $path, ?string $branch ): array {
-		$entries = $this->readDir( $path );
-		if ( null !== $entries ) {
-			$entries = array_values(
-				array_filter(
-					$entries,
-					static function ( $name ) {
-						return ! in_array( $name, TOP_SKIPS, true ) && ! in_array( $name, ANY_SKIPS, true );
-					}
-				)
-			);
-		}
 		return [
 			'path'    => $path,
 			'branch'  => $branch,
 			'other'   => $this->comp( 'other', '', $branch, $path ),
-			'entries' => $entries,
+			'entries' => $this->readDir( $path ),
+			'skips'   => null === $branch ? array_merge( TOP_SKIPS, ANY_SKIPS ) : ANY_SKIPS,
 			'plugins' => null,
 			'themes'  => null,
 		];
@@ -448,7 +589,11 @@ final class Scanner {
 			}
 			$path = $r['path'] . '/' . $name;
 			$real = $this->resolve( $path );
-			if ( null === $real || ! is_dir( $real ) || $this->outOfScope( $real ) || ! $this->markDir( $real ) ) {
+			if ( null !== $real && $this->outOfScope( $real ) ) {
+				$this->unreadLink( $path, $real, $r['other'], $name );
+				continue;
+			}
+			if ( null === $real || ! is_dir( $real ) || ! $this->markDir( $real ) ) {
 				continue;
 			}
 			if ( 'plugins' === $name ) {
@@ -467,6 +612,10 @@ final class Scanner {
 	private function others( array $r, array $branches ): void {
 		foreach ( (array) $r['entries'] as $name ) {
 			$path = $r['path'] . '/' . $name;
+			if ( in_array( $name, $r['skips'], true ) ) {
+				$this->skipped( $path, $name, $r['other'] );
+				continue;
+			}
 			if ( in_array( $name, STRUCTURAL, true ) ) {
 				$loose = 'themes' === $name ? $r['themes'] : ( 'plugins' === $name ? $r['plugins'] : null );
 				if ( null !== $loose ) {
@@ -496,16 +645,16 @@ final class Scanner {
 			return [];
 		}
 
+		// A plugin dir named node_modules or .git is a plugin like any other.
 		$loose = [];
 		foreach ( $entries as $name ) {
-			if ( in_array( $name, ANY_SKIPS, true ) ) {
-				continue;
-			}
 			$path = $dir . '/' . $name;
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
-				if ( ! $this->outOfScope( $real ) && $this->markDir( $real ) ) {
+				if ( $this->outOfScope( $real ) ) {
+					$this->unreadLink( $path, $real, $other, $this->rel( $other, $path ) );
+				} elseif ( $this->markDir( $real ) ) {
 					$comp = $this->comp( 'plugin', $name, $branch, $path, [ 'header' => 'plugin-dir', 'at' => $path ] );
 					$this->walk( $path, $comp );
 				}
@@ -518,6 +667,7 @@ final class Scanner {
 				continue;
 			}
 			if ( null !== $real && ! $this->isPhpName( $name ) ) {
+				$loose[] = $name; // Not code by name; `other` sniffs it.
 				continue;
 			}
 			if ( null === $real && ! $this->linkMatters( $path, $name ) ) {
@@ -549,14 +699,13 @@ final class Scanner {
 
 		$loose = [];
 		foreach ( $entries as $name ) {
-			if ( in_array( $name, ANY_SKIPS, true ) ) {
-				continue;
-			}
 			$path = $dir . '/' . $name;
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
-				if ( ! $this->outOfScope( $real ) && $this->markDir( $real ) ) {
+				if ( $this->outOfScope( $real ) ) {
+					$this->unreadLink( $path, $real, $other, $this->rel( $other, $path ) );
+				} elseif ( $this->markDir( $real ) ) {
 					$comp = $this->comp( 'theme', $name, $branch, $path, [ 'header' => 'theme', 'at' => $path ] );
 					$this->walk( $path, $comp );
 				}
@@ -576,14 +725,17 @@ final class Scanner {
 	 */
 	private function scanTop( string $root, array $entries, int $loose, string $prefix ): void {
 		foreach ( $entries as $name ) {
+			$path = $root . '/' . $name;
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
+				$this->skipped( $path, $name, $loose );
 				continue;
 			}
-			$path = $root . '/' . $name;
 			$real = $this->resolve( $path );
 
 			if ( null !== $real && is_dir( $real ) ) {
-				if ( $this->inScope( $path, $real ) && $this->markDir( $real ) ) {
+				if ( ! $this->inScope( $path, $real ) ) {
+					$this->unreadLink( $path, $real, $loose, $this->rel( $loose, $path ) );
+				} elseif ( $this->markDir( $real ) ) {
 					$comp = $this->comp( 'directory', $prefix . $name, null, $path );
 					$this->walk( $path, $comp );
 				}
@@ -618,6 +770,7 @@ final class Scanner {
 
 		foreach ( $entries as $name ) {
 			if ( in_array( $name, ANY_SKIPS, true ) ) {
+				$this->skipped( $dir . '/' . $name, $this->rel( $comp, $dir . '/' . $name ), $comp );
 				continue;
 			}
 			$this->visit( $dir . '/' . $name, $name, $comp );
@@ -636,6 +789,7 @@ final class Scanner {
 			return;
 		}
 		if ( ! $this->inScope( $path, $real ) ) {
+			$this->unreadLink( $path, $real, $comp, $this->rel( $comp, $path ) );
 			return;
 		}
 
@@ -646,9 +800,6 @@ final class Scanner {
 			return;
 		}
 
-		if ( ! $this->isPhpName( $name ) ) {
-			return;
-		}
 		$st = @stat( $real );
 		if ( false === $st || 0100000 !== ( $st['mode'] & 0170000 ) ) {
 			return;
@@ -656,20 +807,60 @@ final class Scanner {
 		if ( isset( $this->seenFiles[ $st['dev'] ][ $st['ino'] ] ) ) {
 			return;
 		}
+
+		// A phar's code is in the archive, which PHPCS can't read (only its `<?php` stub); also behind a code-named link.
+		if ( $this->isPharName( $name ) || $this->isPharName( $real ) ) {
+			$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
+			$this->notChecked( $comp, $this->rel( $comp, $path ), 'phar' );
+			return;
+		}
+		$mixed = false;
+		if ( ! $this->isPhpName( $name ) && ! $this->isPhpName( $real ) ) {
+			// Any name can be included. One PHP can't read can't run either, so it isn't reported.
+			if ( in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), NO_SNIFF_EXTENSIONS, true ) ) {
+				return;
+			}
+			$tag = $this->sniff( $real );
+			if ( null === $tag ) {
+				return;
+			}
+			$mixed = 'mixed' === $tag;
+		}
 		$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = true;
+		if ( $mixed && $st['size'] > SNIFF_MAX ) {
+			$this->notChecked( $comp, $this->rel( $comp, $path ), 'php_tag' );
+			return;
+		}
 
 		if ( ! is_readable( $real ) ) {
 			$this->notChecked( $comp, $this->rel( $comp, $path ), 'unreadable' );
 			return;
 		}
 
+		// Only in skipped dirs: elsewhere one more open per code file would slow every listing for little gain.
+		if ( $this->inSkipped && ! $mixed && $this->dataOnly( $real ) ) {
+			// Execution stops at the exit: nothing PHPCS could flag runs.
+			$c = &$this->comps[ $comp ];
+			$c['listed']++;
+			$c['files']++;
+			$c['bytes'] += $st['size'];
+			unset( $c );
+			$this->dataFiles++;
+			$this->dataBytes += $st['size'];
+			$this->manifestChecked( $real, $st );
+			return;
+		}
+
 		$this->comps[ $comp ]['listed']++;
 		$this->listedFiles++;
 		$this->listedBytes += $st['size'];
+		if ( ( odd_path( $real ) || ! $this->phpcsTakes( $real ) ) && $st['size'] <= STDIN_MAX ) {
+			$this->stdinFiles++;
+		}
 		if ( $this->isScan ) {
 			// Relative to the component's base; the spool counts against the report cap too.
 			$rel   = $this->rel( $comp, $path );
-			$entry = pack( 'VPV', $comp, $st['size'], strlen( $rel ) ) . $rel;
+			$entry = pack( 'VPV', $comp, $st['size'], strlen( $rel ) | ( $mixed ? MIXED_FLAG : 0 ) ) . $rel;
 
 			$this->listBytes += strlen( $entry );
 			if ( $this->listBytes > $this->cfg['report_max'] ) {
@@ -680,6 +871,181 @@ final class Scanner {
 				$this->flushList();
 			}
 		}
+	}
+
+	/**
+	 * A directory skipped by name (uploads/, cache/, node_modules/, ...): only its code-named files are listed (no sniff),
+	 * e.g. Wordfence's wflogs/*.php or W3TC's cache files. Past the bounds the directory is one not_checked entry instead.
+	 */
+	private function skipped( string $path, string $file, int $comp ): void {
+		// A link that dangles or leaves the mount can't be searched (uploads -> /mnt/... included).
+		$real = $this->resolve( $path );
+		if ( null === $real ) {
+			$this->notChecked( $comp, $file . '/', 'unreadable' );
+			return;
+		}
+		if ( ! $this->inScope( $path, $real ) ) {
+			$this->unreadLink( $path, $real, $comp, $file );
+			return;
+		}
+		if ( ! is_dir( $path ) ) {
+			$this->visit( $path, basename( $path ), $comp );
+			return;
+		}
+		if ( $this->isScan ) {
+			$this->skippedDirs[] = $real . '/';
+		}
+		$hits = $this->codeIn( $path );
+		if ( null === $hits ) {
+			$this->notChecked( $comp, $file . '/', 'skipped' );
+			return;
+		}
+		$this->inSkipped = true;
+		foreach ( $hits as $hit => $unlistable ) {
+			if ( $unlistable ) {
+				$this->notChecked( $comp, $this->rel( $comp, $hit ) . '/', 'unreadable' );
+			} else {
+				$this->visit( $hit, basename( $hit ), $comp );
+			}
+		}
+		$this->inSkipped = false;
+	}
+
+	/**
+	 * Code-named and .phar entries of a tree (and bad links that may be code), sorted, each => whether it is a
+	 * directory that can't be listed; null past COMPAT_SKIPPED_FILES files, COMPAT_SKIPPED_BYTES bytes of files
+	 * PHPCS would read (data-only files don't count) or the COMPAT_SKIPPED_SECONDS all skipped dirs share.
+	 *
+	 * @return array<string,bool>|null
+	 */
+	private function codeIn( string $dir ): ?array {
+		$hits  = [];
+		$bytes = 0;
+		$seen  = [];
+		$stack = [ $dir ];
+		$start = microtime( true );
+		$stop  = $start + $this->skippedBudget;
+		while ( $stack ) {
+			$d  = array_pop( $stack );
+			$st = @stat( $d );
+			if ( false === $st || isset( $seen[ $st['dev'] ][ $st['ino'] ] ) ) {
+				continue;
+			}
+			$seen[ $st['dev'] ][ $st['ino'] ] = true;
+
+			$handle = @opendir( $d );
+			if ( false === $handle ) {
+				$hits[ $d ] = true;
+				continue;
+			}
+			if ( ! $this->searchable( $d ) ) {
+				// Listed but not searchable: nothing in it can be read.
+				if ( $this->hasEntries( $handle ) ) {
+					$hits[ $d ] = true;
+				}
+				closedir( $handle );
+				continue;
+			}
+			while ( false !== ( $name = readdir( $handle ) ) ) {
+				if ( '.' === $name || '..' === $name ) {
+					continue;
+				}
+				$this->tick();
+				if ( microtime( true ) > $stop ) {
+					closedir( $handle );
+					$this->skippedBudget = 0.0;
+					return null;
+				}
+				$path = $d . '/' . $name;
+				// One stat for most entries: only directories and code or extension-less names need more.
+				if ( is_dir( $path ) ) {
+					$real = $this->resolve( $path );
+					if ( null === $real || ( is_link( $path ) && ! $this->inScope( $path, $real ) ) ) {
+						$hits[ $path ] = false; // Leaves the mount or the scope: visit() reports it.
+					} elseif ( $this->inScope( $path, $real ) ) {
+						$stack[] = $path;
+					}
+					continue;
+				}
+				if ( $this->isPhpName( $name ) || $this->isPharName( $name ) ) {
+					$size = @filesize( $path );
+					$r    = $this->resolve( $path );
+					if ( false !== $size && ! ( null !== $r && $this->dataOnly( $r ) ) ) {
+						$bytes += $size;
+					}
+				} elseif ( preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name ) || ! is_link( $path ) || null !== $this->resolve( $path ) ) {
+					continue;
+				}
+				$hits[ $path ] = false;
+				if ( count( $hits ) > $this->cfg['skipped_files'] || $bytes > $this->cfg['skipped_bytes'] || microtime( true ) > $stop ) {
+					closedir( $handle );
+					$this->skippedBudget = max( 0.0, $stop - microtime( true ) );
+					return null;
+				}
+			}
+			closedir( $handle );
+		}
+		$this->skippedBudget = max( 0.0, $stop - microtime( true ) );
+		ksort( $hits, SORT_STRING );
+		return $hits;
+	}
+
+	/**
+	 * A data file PHP never runs past its first statement: `<?php exit; ?>`, `<?php die(); ?>`, `<?php exit('...'); ?>`
+	 * (W3TC, WP Super Cache, Wordfence), optionally with `__halt_compiler();` before the `?>`. Without
+	 * __halt_compiler() the rest must hold no other open tag, since PHP compiles the whole file first.
+	 */
+	private function dataOnly( string $path ): bool {
+		$fh = open_regular( $path );
+		if ( null === $fh ) {
+			return false;
+		}
+		$head = (string) fread( $fh, 512 );
+		$ok   = (bool) preg_match( '/\A(?:\xEF\xBB\xBF)?<\?php\s+(?:exit|die)\s*(?:\(\s*(?:\'[^\'\\\\]*\'|"[^"\\\\$]*"|\d+)?\s*\))?\s*;?\s*(__halt_compiler\s*\(\s*\)\s*;?\s*)?\?>/i', $head, $m );
+		if ( $ok && empty( $m[1] ) ) {
+			$rest = substr( $head, strlen( $m[0] ) );
+			$read = strlen( $head );
+			while ( true ) {
+				if ( preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $rest ) ) {
+					$ok = false;
+					break;
+				}
+				$more = fread( $fh, 65536 );
+				if ( false === $more || ( '' === $more && ! feof( $fh ) ) ) {
+					$ok = false; // A failed read: not known to be data.
+					break;
+				}
+				if ( '' === $more ) {
+					break;
+				}
+				$read += strlen( $more );
+				if ( $read > DATA_MAX ) {
+					$ok = false; // Not read to the end: never counted as checked unread.
+					break;
+				}
+				$rest = substr( $rest, -5 ) . $more; // A tag split across reads.
+			}
+		}
+		fclose( $fh );
+		return $ok;
+	}
+
+	/**
+	 * A file without a code name: 'code' when it starts with a PHP open tag (after a BOM, whitespace or a #! line),
+	 * 'mixed' when one follows other text in its first SNIFF_BYTES, null otherwise or when it is binary (a NUL byte).
+	 */
+	private function sniff( string $real ): ?string {
+		$fh = open_regular( $real );
+		if ( null === $fh ) {
+			return null;
+		}
+		$head = fread( $fh, SNIFF_BYTES );
+		fclose( $fh );
+		// SNIFF_REGEX is the rule the manifest publishes; the second match only finds where the tag starts.
+		if ( false === $head || ! preg_match( SNIFF_REGEX, $head ) || ! preg_match( '/<\?(?:php(?:\s|\z)|=)/i', $head, $m, PREG_OFFSET_CAPTURE ) ) {
+			return null;
+		}
+		return preg_match( '/\A(?:\xEF\xBB\xBF)?(?:#![^\n]*\n)?\s*\z/', substr( $head, 0, $m[0][1] ) ) ? 'code' : 'mixed';
 	}
 
 	/** Real path when it exists and stays inside the mount, else null. */
@@ -696,34 +1062,91 @@ final class Scanner {
 	 * their ancestors, a php site's old releases, and (wp) WordPress core.
 	 */
 	private function outOfScope( string $real ): bool {
+		return null !== $this->scopeWhy( $real );
+	}
+
+	/**
+	 * Why a real path is out of scope: 'old' (an old release), 'anchor' (the content root, the scanned directory or an
+	 * ancestor, walked anyway), 'core' (the WordPress root's core) or 'nested' (another install's core); null when in scope.
+	 */
+	private function scopeWhy( string $real ): ?string {
 		foreach ( $this->oldReleases as $old ) {
 			if ( 0 === strpos( $real . '/', $old . '/' ) ) {
-				return true;
+				return 'old';
 			}
 		}
 		foreach ( [ $this->contentReal, $this->rootReal ] as $anchor ) {
 			if ( null !== $anchor && 0 === strpos( $anchor . '/', $real . '/' ) ) {
-				return true;
+				return 'anchor';
 			}
 		}
-		return $this->isCore( $real );
+		$install = $this->coreOf( $real );
+		if ( null === $install ) {
+			return null;
+		}
+		return $install === $this->rootReal ? 'core' : 'nested';
 	}
 
-	/** wp-admin/, wp-includes/ (and anything in them) and the core files beside them, wherever WordPress is installed. */
-	private function isCore( string $real ): bool {
-		if ( 'wp' !== $this->cfg['site_type'] ) {
-			return false;
+	/**
+	 * A link to what the scanner never reads (an old release, the root's core) is not_checked as the link itself: dropping
+	 * it would leave code it serves or includes unread. Links to an ancestor are walked through their real path, and
+	 * another install's core is its nested_wordpress entry. A link beside `current` to a whole old release is a release
+	 * pointer (`previous -> releases/1`), like `current` itself.
+	 */
+	private function unreadLink( string $path, string $real, int $comp, string $file ): void {
+		$why = $this->scopeWhy( $real );
+		if ( ! is_link( $path ) || ( 'old' !== $why && 'core' !== $why ) ) {
+			return;
 		}
-		if ( in_array( basename( $real ), CORE_FILES, true ) && $this->coreDir( dirname( $real ) ) ) {
+		$dir = is_dir( $real );
+		if ( 'old' === $why && $dir && in_array( $real, $this->oldReleases, true ) && dirname( $real ) === @realpath( dirname( $path ) ) . '/releases' ) {
+			return;
+		}
+		if ( ! $dir && ! $this->codeLike( basename( $path ), $real ) ) {
+			return;
+		}
+		$at = $this->linkLocation( $path );
+		$this->notChecked( $comp, $dir ? rtrim( $file, '/' ) . '/' : $file, 'unreadable', $dir ? $at . '/' : $at );
+	}
+
+	/** Real path of a directory entry itself: its directory resolved, the last name kept (a link isn't followed). */
+	private function linkLocation( string $path ): string {
+		$dir = @realpath( dirname( $path ) );
+		return ( false === $dir ? dirname( $path ) : $dir ) . '/' . basename( $path );
+	}
+
+	/** A regular file the manifest counts as code: by its name or its target's, or (other names) by the sniff. */
+	private function codeLike( string $name, string $real ): bool {
+		if ( $this->isPhpName( $name ) || $this->isPharName( $name ) || $this->isPhpName( $real ) || $this->isPharName( $real ) ) {
 			return true;
 		}
-		// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
-		for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
-			if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
-				return true;
+		return ! in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), NO_SNIFF_EXTENSIONS, true ) && null !== $this->sniff( $real );
+	}
+
+	/**
+	 * The install whose core holds a real path: wp-admin/, wp-includes/ (and anything in them) and the core files beside
+	 * them, wherever WordPress is installed. Another install than the root is recorded for a nested_wordpress entry.
+	 */
+	private function coreOf( string $real ): ?string {
+		if ( 'wp' !== $this->cfg['site_type'] ) {
+			return null;
+		}
+		$install = null;
+		if ( in_array( basename( $real ), CORE_FILES, true ) && $this->coreDir( dirname( $real ) ) ) {
+			$install = dirname( $real );
+		} else {
+			// A link straight to a file or dir inside core (`-> ../wp-includes/version.php`).
+			for ( $p = $real; strlen( $p ) > strlen( MOUNT_ROOT ); $p = dirname( $p ) ) {
+				if ( in_array( basename( $p ), CORE_DIRS, true ) && $this->coreDir( dirname( $p ) ) ) {
+					$install = dirname( $p );
+					break;
+				}
 			}
 		}
-		return false;
+		if ( null !== $install && $install !== $this->rootReal ) {
+			$this->nested[ $install ] = true;
+		}
+		return $install;
 	}
 
 	/** A directory holding wp-settings.php and wp-includes/. */
@@ -735,23 +1158,33 @@ final class Scanner {
 	}
 
 	/**
-	 * Whether a path that doesn't resolve inside the mount must be reported:
-	 * PHP files and (possible) directories; a broken `readme.txt` link isn't.
+	 * Whether a path that doesn't resolve inside the mount must be reported. What it reaches in the site's php container
+	 * (EE's mounts) may differ from what the scanner sees, so only these are left out: names with a never-PHP extension
+	 * (`readme.txt`, `style.css`) or `.log`, links to exactly /dev/null, /dev/stdout or /dev/stderr (`error_log -> /dev/stderr`,
+	 * as EE accepts them), and targets the scanner sees as neither a file nor a directory.
 	 */
 	private function linkMatters( string $path, string $name ): bool {
-		if ( $this->isPhpName( $name ) ) {
+		if ( $this->isPhpName( $name ) || $this->isPharName( $name ) ) {
 			return true;
 		}
 		$target = @realpath( $path );
-		if ( false !== $target ) {
-			return is_dir( $target );
+		if ( false !== $target && is_dir( $target ) ) {
+			return true;
 		}
-		return ! preg_match( '/\.[A-Za-z0-9]{1,8}\z/', $name );
+		if ( ( false !== $target && ! is_file( $target ) ) || in_array( @readlink( $path ), [ '/dev/null', '/dev/stdout', '/dev/stderr' ], true ) ) {
+			return false;
+		}
+		return ! in_array( strtolower( (string) pathinfo( $name, PATHINFO_EXTENSION ) ), array_merge( NO_SNIFF_EXTENSIONS, [ 'log' ] ), true );
 	}
 
 	/** PHP code: a name ending in one of CODE_EXTENSIONS, in any case. */
 	private function isPhpName( string $name ): bool {
 		return (bool) preg_match( '/\.(?:' . implode( '|', CODE_EXTENSIONS ) . ')\z/i', $name );
+	}
+
+	/** `.phar` and the archive forms PHP's phar extension also opens (`.phar.tar`, `.phar.tar.gz`, `.phar.zip`, ...). */
+	private function isPharName( string $name ): bool {
+		return (bool) preg_match( PHAR_REGEX, $name );
 	}
 
 	/** A plugin file name as WordPress reads headers from it: lowercase `.php`. */
@@ -799,6 +1232,10 @@ final class Scanner {
 			}
 		}
 		closedir( $handle );
+		// Names without search permission: nothing in it can be read, so the whole directory is reported.
+		if ( $keys && ! $this->searchable( $dir ) ) {
+			return null;
+		}
 		sort( $keys, SORT_STRING );
 		foreach ( $keys as $i => $key ) {
 			if ( '/' === substr( $key, -1 ) ) {
@@ -806,6 +1243,21 @@ final class Scanner {
 			}
 		}
 		return $keys;
+	}
+
+	/** Search (x) permission on a directory; posix_access() would drop a trailing `/.`. */
+	private function searchable( string $dir ): bool {
+		return ! function_exists( 'posix_access' ) || @posix_access( $dir, POSIX_X_OK );
+	}
+
+	/** @param resource $handle A directory handle. */
+	private function hasEntries( $handle ): bool {
+		while ( false !== ( $name = readdir( $handle ) ) ) {
+			if ( '.' !== $name && '..' !== $name ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private function tick(): void {
@@ -850,9 +1302,9 @@ final class Scanner {
 		return substr( $path, strlen( $base ) + 1 );
 	}
 
-	private function notChecked( int $comp, string $file, string $reason ): void {
+	private function notChecked( int $comp, string $file, string $reason, ?string $manifestPath = null ): void {
 		if ( $this->isScan ) {
-			$this->spoolNotChecked( $comp, $file, $reason );
+			$this->spoolNotChecked( $comp, $file, $reason, $manifestPath );
 		} else {
 			$this->notCheckedCount++;
 		}
@@ -939,13 +1391,14 @@ final class Scanner {
 		$bps        = $calBytes / $calSeconds;
 		$batches    = $files > 0 ? (int) ceil( $files / $this->cfg['batch_size'] ) : 0;
 		$perBatch   = $this->cfg['seconds_per_batch'];
-		$raw        = $bytes / $bps + $batches * $perBatch;
+		// Every STDIN file is a PHPCS run of its own, which costs at least its start-up.
+		$raw        = $bytes / $bps + $batches * $perBatch + $this->stdinFiles * $empty;
 		$est        = max( 1, (int) round( $raw ) );
 
 		$doc = $this->head( 'ok' );
 
-		$doc['php_files']              = $files + $this->notCheckedCount;
-		$doc['php_bytes']              = $bytes;
+		$doc['php_files']              = $files + $this->notCheckedCount + $this->dataFiles;
+		$doc['php_bytes']              = $bytes + $this->dataBytes;
 		$doc['components']             = count( $this->listedComponents() );
 		$doc['estimated_seconds']      = $est;
 		$doc['estimated_seconds_low']  = max( 1, (int) round( $est * $this->cfg['low_factor'] ) );
@@ -957,6 +1410,7 @@ final class Scanner {
 			'bytes_per_second'    => (int) round( $bps ),
 			'batches'             => $batches,
 			'seconds_per_batch'   => $perBatch,
+			'stdin_files'         => $this->stdinFiles,
 			'cpus'                => cpu_count(),
 			'load_average_1m'     => load_average(),
 			'low_factor'          => $this->cfg['low_factor'],
@@ -1006,7 +1460,7 @@ final class Scanner {
 		return $this->finish();
 	}
 
-	/** @return array{comp:int,size:int,path:string}|null */
+	/** @return array{comp:int,size:int,path:string,mixed:bool}|null */
 	private function nextFile(): ?array {
 		$head = fread( $this->listFh, 16 );
 		if ( '' === $head && feof( $this->listFh ) ) {
@@ -1016,11 +1470,12 @@ final class Scanner {
 			throw new ToolError( 'could not read the file list' );
 		}
 		$h   = unpack( 'Vcomp/Psize/Vlen', $head );
-		$rel = $h['len'] > 0 ? fread( $this->listFh, $h['len'] ) : '';
-		if ( false === $rel || strlen( $rel ) !== $h['len'] || ! isset( $this->comps[ $h['comp'] ] ) ) {
+		$len = $h['len'] & ~MIXED_FLAG;
+		$rel = $len > 0 ? fread( $this->listFh, $len ) : '';
+		if ( false === $rel || strlen( $rel ) !== $len || ! isset( $this->comps[ $h['comp'] ] ) ) {
 			throw new ToolError( 'could not read the file list' );
 		}
-		return [ 'comp' => $h['comp'], 'size' => $h['size'], 'path' => $this->comps[ $h['comp'] ]['base'] . '/' . $rel ];
+		return [ 'comp' => $h['comp'], 'size' => $h['size'], 'path' => $this->comps[ $h['comp'] ]['base'] . '/' . $rel, 'mixed' => 0 !== ( $h['len'] & MIXED_FLAG ) ];
 	}
 
 	/**
@@ -1039,10 +1494,13 @@ final class Scanner {
 			}
 			// A file rewritten since the listing (a live site) is checked as it is now.
 			$batch[ $k ]['size']  = $st['size'];
+			$batch[ $k ]['st']    = $st;
 			$batch[ $k ]['real']  = $real;
 			// --file-list splits on newlines and trims each line, and PHPCS skips a
 			// file whose real name has no --extensions match: such files go through STDIN.
 			$batch[ $k ]['stdin'] = odd_path( $real ) || ! $this->phpcsTakes( $real );
+			// Every file's run has a time cap; a sniffed file (not code by name) gets a shorter one.
+			$batch[ $k ]['cap'] = (float) ( $this->isPhpName( basename( $f['path'] ) ) || $this->isPhpName( $real ) ? $this->cfg['file_timeout'] : $this->cfg['sniffed_timeout'] );
 			if ( ! $batch[ $k ]['stdin'] ) {
 				$plain[ $real ] = $k;
 			}
@@ -1050,8 +1508,9 @@ final class Scanner {
 
 		$reader = null;
 		if ( $plain ) {
-			$res = $this->phpcs( array_keys( $plain ), $this->cfg['batch_memory'], 'batch' );
-			$this->debug( sprintf( 'batch %d files rc=%d %.2fs', count( $plain ), $res['rc'], $res['seconds'] ) );
+			// Capped at one file's cap: past it, each file runs on its own under its cap, so only a slow file is `timeout`.
+			$res = $this->phpcs( array_keys( $plain ), $this->cfg['batch_memory'], 'batch', false, (float) $this->cfg['file_timeout'] );
+			$this->debug( sprintf( 'batch %d files rc=%d %.2fs%s', count( $plain ), $res['rc'], $res['seconds'], $res['capped'] ? ' capped' : '' ) );
 			if ( $res['timeout'] || ( ! $res['ok'] && microtime( true ) >= $this->deadline ) ) {
 				throw $this->timedOutAt( $batch[ reset( $plain ) ]['path'] );
 			}
@@ -1094,10 +1553,19 @@ final class Scanner {
 
 	/** Steps 2 to 4 for one file. */
 	private function runSingle( array $f ): void {
+		if ( $f['stdin'] && $f['size'] > STDIN_MAX ) {
+			// Refused by size, not copied to /out (real code this large exceeds the retry memory).
+			$this->spoolNotChecked( $f['comp'], $this->rel( $f['comp'], $f['path'] ), 'memory' );
+			return;
+		}
 		$last = null;
 		foreach ( [ $this->cfg['file_memory'], $this->cfg['retry_memory'] ] as $memory ) {
-			$res = $this->phpcs( [ $f['real'] ], $memory, 'single', $f['stdin'] );
+			$res = $this->phpcs( [ $f['real'] ], $memory, 'single', $f['stdin'], $f['cap'] );
 			$this->debug( sprintf( 'single %s at %s rc=%d %.2fs', $f['path'], $memory, $res['rc'], $res['seconds'] ) );
+			if ( $res['capped'] ) {
+				$this->spoolNotChecked( $f['comp'], $this->rel( $f['comp'], $f['path'] ), 'timeout' );
+				return;
+			}
 			if ( $res['timeout'] || ( ! $res['ok'] && microtime( true ) >= $this->deadline ) ) {
 				throw $this->timedOutAt( $f['path'] );
 			}
@@ -1169,18 +1637,32 @@ final class Scanner {
 	/** Counts one finished file and spools its findings from the report block. */
 	private function record( array $f, ReportReader $reader ): void {
 		$comp = $f['comp'];
-		$rel  = clean_text( $this->rel( $comp, $f['path'] ) );
+		$raw  = $this->rel( $comp, $f['path'] );
+		$rel  = clean_text( $raw );
 
 		$block = $reader->take();
 		if ( $block['u'] ) {
 			$reader->skipMessages();
-			$this->spoolNotChecked( $comp, $rel, 'unparseable' );
+			$this->spoolNotChecked( $comp, $raw, 'unparseable', $f['real'] );
 			return;
 		}
+		// Text before the tag (a script with `<?php` in a string): an error, or PHPCS's own trouble, may be on code that never runs.
+		$messages = null;
+		if ( $f['mixed'] ) {
+			$messages = [];
+			while ( null !== ( $m = $reader->message() ) ) {
+				if ( 'ERROR' === $m[2] || 0 === strpos( $m[3], 'Internal.' ) ) {
+					$reader->skipMessages();
+					$this->spoolNotChecked( $comp, $raw, 'php_tag', $f['real'] );
+					return;
+				}
+				$messages[] = $m;
+			}
+		}
 
-		$errors = $warnings = 0;
+		$errors = $warnings = $i = 0;
 		$buf    = [ 'e' => '', 'w' => '' ];
-		while ( null !== ( $m = $reader->message() ) ) {
+		while ( null !== ( $m = null !== $messages ? ( $messages[ $i++ ] ?? null ) : $reader->message() ) ) {
 			list( $line, , $type, $source, $text ) = $m;
 			if ( 0 === strpos( $source, 'Internal.' ) ) {
 				continue;
@@ -1215,9 +1697,11 @@ final class Scanner {
 		$c['warnings'] += $warnings;
 		$c['bytes']    += $f['size'];
 		unset( $c );
+		$this->manifestChecked( $f['real'], $f['st'] );
 	}
 
-	private function spoolNotChecked( int $comp, string $file, string $reason ): void {
+	/** @param string|null $manifestPath What the manifest lists, when it isn't the component's base plus `$file`. */
+	private function spoolNotChecked( int $comp, string $file, string $reason, ?string $manifestPath = null ): void {
 		$c     = $this->comps[ $comp ];
 		$entry = ',' . json_encode(
 			[ 'type' => $c['type'], 'slug' => clean_text( $c['slug'] ), 'branch' => clean_nullable( $c['branch'] ), 'file' => clean_text( $file ), 'reason' => $reason ],
@@ -1226,6 +1710,101 @@ final class Scanner {
 		$this->addReportBytes( strlen( $entry ) );
 		$this->append( $this->work . '/not_checked', $entry );
 		$this->notCheckedCount++;
+
+		// The manifest names it by real path; a directory (`…/`) covers everything below it.
+		$dir  = '/' === substr( $file, -1 );
+		$rel  = rtrim( $file, '/' );
+		$path = '' === $rel || '.' === $rel ? $c['base'] : $c['base'] . '/' . $rel;
+		$real = @realpath( $path );
+		$path = false !== $real && $this->inside( $real ) ? $real : $path;
+		$path = $dir ? rtrim( $path, '/' ) . '/' : $path;
+		// One per report entry, so a path may repeat; a set would grow with every entry.
+		$this->manifestAdd( 'not_checked', $manifestPath ?? $path );
+	}
+
+	/** A file counted as checked, once per inode (hard links and two routes to one file). */
+	private function manifestChecked( string $real, array $st ): void {
+		if ( ! $this->isScan || 'm' === ( $this->seenFiles[ $st['dev'] ][ $st['ino'] ] ?? null ) ) {
+			return;
+		}
+		$this->seenFiles[ $st['dev'] ][ $st['ino'] ] = 'm';
+		$this->manifestAdd( 'checked', $real );
+	}
+
+	private function manifestAdd( string $list, string $path ): void {
+		$entry = ',' . json_encode( manifest_path( $path ), JSON_FLAGS );
+
+		$this->manBytes += strlen( $entry );
+		if ( $this->manBytes > $this->cfg['report_max'] ) {
+			throw new ToolError( sprintf( 'file manifest larger than %d bytes', $this->cfg['report_max'] ) );
+		}
+		$this->manBuf[ $list ] .= $entry;
+		if ( strlen( $this->manBuf[ $list ] ) >= BUFFER_MAX ) {
+			$this->append( $this->work . "/m-$list", $this->manBuf[ $list ] );
+			$this->manBuf[ $list ] = '';
+		}
+	}
+
+	/** /out/manifest.json: what the scan covered, by real path, with the rules to re-derive the code files. */
+	private function writeManifest(): void {
+		foreach ( $this->manBuf as $list => $data ) {
+			if ( '' !== $data ) {
+				$this->append( $this->work . "/m-$list", $data );
+			}
+		}
+		$wp   = 'wp' === $this->cfg['site_type'];
+		$core = $wp && null !== $this->rootReal && $this->coreDir( $this->rootReal ) ? $this->rootReal . '/' : null;
+		$head = [
+			'v'                           => 1,
+			'code_extensions'             => CODE_EXTENSIONS,
+			'extensions_case_insensitive' => true,
+			'phar_regex'                  => PHAR_REGEX,
+			'sniff'                       => [
+				'bytes'              => SNIFF_BYTES,
+				'regex'              => SNIFF_REGEX,
+				'exclude_extensions' => NO_SNIFF_EXTENSIONS,
+				'scope'              => 'except_skipped_dirs',
+				'skipped_dirs'       => array_values( array_unique( array_map( 'manifest_path', $this->skippedDirs ) ) ),
+			],
+			'roots'                       => $wp ? ( null === $this->rootReal ? [] : [ manifest_path( $this->rootReal . '/' ) ] ) : [ MOUNT_ROOT . '/' ],
+			'excluded'                    => [],
+			'old_releases'                => array_map(
+				static function ( $d ) {
+					return manifest_path( $d . '/' );
+				},
+				$this->oldReleases
+			),
+			'core'                        => [ 'root' => null === $core ? null : manifest_path( $core ), 'dirs' => CORE_DIRS, 'files' => CORE_FILES ],
+		];
+
+		$tmp = OUT_DIR . '/manifest.json.tmp';
+		$out = @fopen( $tmp, 'wb' );
+		if ( false === $out ) {
+			throw new ToolError( 'output directory not writable' );
+		}
+		$write = static function ( string $data ) use ( $out ) {
+			if ( fwrite( $out, $data ) !== strlen( $data ) ) {
+				throw new ToolError( 'could not write the file manifest' );
+			}
+		};
+		try {
+			$json = json_encode( $head, JSON_FLAGS );
+			$write( substr( $json, 0, -1 ) . ',"checked":[' );
+			$first = true;
+			$this->copySpool( $this->work . '/m-checked', $write, $first );
+			$write( '],"not_checked":[' );
+			$first = true;
+			$this->copySpool( $this->work . '/m-not_checked', $write, $first );
+			$write( "]}\n" );
+		} catch ( Throwable $e ) {
+			fclose( $out );
+			@unlink( $tmp );
+			throw $e;
+		}
+		if ( ! fclose( $out ) || ! @rename( $tmp, OUT_DIR . '/manifest.json' ) ) {
+			@unlink( $tmp );
+			throw new ToolError( 'could not write the file manifest' );
+		}
 	}
 
 	private function addReportBytes( int $n ): void {
@@ -1283,6 +1862,7 @@ final class Scanner {
 			}
 		);
 
+		$this->writeManifest();
 		$this->writeReport( $doc, $listed );
 		$this->removeWork();
 		$this->debug( sprintf( 'entrypoint peak memory %d bytes', memory_get_peak_usage() ) );
@@ -1382,14 +1962,31 @@ final class Scanner {
 	 *
 	 * @return array{ok:bool,timeout:bool,too_large:bool,unreadable:bool,rc:int,seconds:float,report:string}
 	 */
-	private function phpcs( array $paths, string $memory, string $tag, bool $stdin = false ): array {
+	private function phpcs( array $paths, string $memory, string $tag, bool $stdin = false, float $cap = 0.0 ): array {
 		$report = $this->work . "/phpcs-$tag.out";
-		$res    = [ 'ok' => false, 'timeout' => false, 'too_large' => false, 'unreadable' => false, 'rc' => -1, 'seconds' => 0.0, 'report' => $report ];
+		$res    = [ 'ok' => false, 'timeout' => false, 'capped' => false, 'too_large' => false, 'unreadable' => false, 'rc' => -1, 'seconds' => 0.0, 'report' => $report ];
 
+		$in = [ 'file', '/dev/null', 'r' ];
+		if ( $stdin ) {
+			// Before the time left is taken, so the copy can't push the run past the deadline.
+			$in = $this->stdinCopy( $paths[0] );
+			if ( null === $in ) {
+				$res['unreadable'] = true;
+				return $res;
+			}
+		}
 		$left = $this->deadline - microtime( true );
 		if ( $left <= 0 ) {
+			if ( is_resource( $in ) ) {
+				fclose( $in );
+				@unlink( $this->work . '/stdin' );
+			}
 			$res['timeout'] = true;
 			return $res;
+		}
+		$capped = $cap > 0 && $cap < $left;
+		if ( $capped ) {
+			$left = $cap;
 		}
 
 		@unlink( $report );
@@ -1405,13 +2002,7 @@ final class Scanner {
 			'--report=' . REPORT_CLASS, '--report-file=' . $report,
 		];
 
-		$in = [ 'file', '/dev/null', 'r' ];
 		if ( $stdin ) {
-			$in = open_regular( $paths[0] );
-			if ( null === $in ) {
-				$res['unreadable'] = true;
-				return $res;
-			}
 			// PHPCS resolves --stdin-path and filters it by extension, so it must end in one it takes.
 			$cmd[] = '--stdin-path=' . $paths[0] . ( $this->phpcsTakes( $paths[0] ) ? '' : '.php' );
 			$cmd[] = '-';
@@ -1431,6 +2022,7 @@ final class Scanner {
 		set_fsize( null );
 		if ( is_resource( $in ) ) {
 			fclose( $in );
+			@unlink( $this->work . '/stdin' );
 		}
 		if ( ! is_resource( $proc ) ) {
 			throw new ToolError( 'could not start phpcs' );
@@ -1439,6 +2031,11 @@ final class Scanner {
 
 		$res['rc']      = $rc;
 		$res['seconds'] = ( hrtime( true ) - $t ) / 1e9;
+		// Killed by its own cap, not the scan deadline (busybox timeout reports SIGKILL as 9 or 137).
+		if ( $capped && in_array( $rc, [ 9, 137 ], true ) && $res['seconds'] >= $cap * 0.99 ) {
+			$res['capped'] = true;
+			return $res;
+		}
 
 		clearstatcache();
 		$size = @filesize( $report );
@@ -1448,6 +2045,48 @@ final class Scanner {
 			$res['ok'] = true;
 		}
 		return $res;
+	}
+
+	/**
+	 * STDIN for PHPCS: a copy behind our own `phpcs_input_file:` line, which PHPCS drops instead of the file's first line.
+	 * A constant name, as a path may hold an end of line. A file, not a pipe: PHPCS stops reading after 200 ms without data.
+	 *
+	 * @return resource|null Rewound copy, or null when the file can't be read.
+	 */
+	private function stdinCopy( string $path ) {
+		$src = open_regular( $path );
+		if ( null === $src ) {
+			return null;
+		}
+		$dst = @fopen( $this->work . '/stdin', 'w+b' );
+		if ( false === $dst ) {
+			fclose( $src );
+			throw new ToolError( 'could not write to the output directory' );
+		}
+		$data = "phpcs_input_file: STDIN\n";
+		do {
+			if ( microtime( true ) >= $this->deadline ) {
+				fclose( $src );
+				fclose( $dst );
+				@unlink( $this->work . '/stdin' );
+				throw $this->timedOutAt( $path );
+			}
+			if ( fwrite( $dst, $data ) !== strlen( $data ) ) {
+				fclose( $src );
+				fclose( $dst );
+				throw new ToolError( 'could not write to the output directory' );
+			}
+			$data = fread( $src, BUFFER_MAX );
+		} while ( false !== $data && '' !== $data );
+		$failed = false === $data || ! feof( $src );
+		fclose( $src );
+		if ( $failed ) {
+			fclose( $dst );
+			@unlink( $this->work . '/stdin' );
+			return null;
+		}
+		rewind( $dst );
+		return $dst;
 	}
 
 	// ------------------------------------------------------------------ misc
@@ -1708,6 +2347,11 @@ function clean_text( string $s ): string {
 	return (string) preg_replace( '/[\x{00}-\x{1F}\x{7F}-\x{9F}\x{061C}\x{200B}-\x{200F}\x{2028}-\x{202E}\x{2060}-\x{2069}\x{FEFF}]/u', "\u{FFFD}", $s );
 }
 
+/** A manifest path: JSON can't carry the bytes of one that isn't UTF-8, so it goes as `b64:` + base64 (paths start with `/`). */
+function manifest_path( string $path ): string {
+	return preg_match( '//u', $path ) ? $path : 'b64:' . base64_encode( $path );
+}
+
 function clean_nullable( ?string $s ): ?string {
 	return null === $s ? null : clean_text( $s );
 }
@@ -1889,6 +2533,12 @@ function parse_args( array $argv, array &$cfg ): void {
 	$cfg['low_factor']        = env_float( 'COMPAT_LOW_FACTOR', 0.8 );
 	$cfg['high_factor']       = env_float( 'COMPAT_HIGH_FACTOR', 1.5 );
 	$cfg['report_max']        = env_int( 'COMPAT_REPORT_MAX', REPORT_MAX, 1024 );
+	$cfg['skipped_files']     = env_int( 'COMPAT_SKIPPED_FILES', 100000 );
+	$cfg['skipped_bytes']     = env_int( 'COMPAT_SKIPPED_BYTES', 67108864 );
+	$cfg['skipped_seconds']   = env_int( 'COMPAT_SKIPPED_SECONDS', 60, 0 );
+	$cfg['sniffed_timeout']   = env_int( 'COMPAT_SNIFFED_TIMEOUT', 30 );
+	$cfg['file_timeout']      = env_int( 'COMPAT_FILE_TIMEOUT', 120 );
+	$cfg['home_seconds']      = env_int( 'COMPAT_HOME_SECONDS', 60, 0 );
 	if ( $cfg['low_factor'] > 1 || $cfg['high_factor'] < 1 ) {
 		throw new BadArgs( 'COMPAT_LOW_FACTOR must be at most 1 and COMPAT_HIGH_FACTOR at least 1' );
 	}
@@ -1897,6 +2547,9 @@ function parse_args( array $argv, array &$cfg ): void {
 function emit( array $doc, int $code, bool $report ): void {
 	global $emitted;
 	$emitted = true;
+	if ( $report && 'ok' !== $doc['status'] ) {
+		@unlink( OUT_DIR . '/manifest.json' ); // Only an ok scan has one.
+	}
 	$json    = json_encode( $doc, JSON_FLAGS ) . "\n";
 	if ( $report ) {
 		$tmp = OUT_DIR . '/report.json.tmp';
@@ -1904,6 +2557,7 @@ function emit( array $doc, int $code, bool $report ): void {
 			@unlink( $tmp );
 			// The report is part of the result: without it only a tool_error stands.
 			if ( 'tool_error' !== $doc['status'] ) {
+				@unlink( OUT_DIR . '/manifest.json' );
 				$doc['status'] = 'tool_error';
 				$doc['detail'] = 'could not write the report';
 				$json          = json_encode( $doc, JSON_FLAGS ) . "\n";
