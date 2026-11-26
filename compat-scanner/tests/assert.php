@@ -100,7 +100,7 @@ eq( $full['status'] ?? null, 'ok', 'full: status ok' );
 eq( field( $full, 'safe_to_upgrade' ), false, 'full: safe_to_upgrade false' );
 eq( array_keys( $full ), [ 'v', 'status', 'site', 'target', 'safe_to_upgrade', 'errors', 'warnings', 'files_checked', 'files_not_checked', 'php_bytes', 'components_checked', 'components_with_errors', 'duration_s', 'tool' ], 'full: summary keys and order' );
 eq( [ $full['v'], $full['site'], $full['target'] ], [ 1, 'fixture.test', '8.4' ], 'full: v, site, target' );
-eq( [ $full['errors'], $full['warnings'], $full['files_checked'], $full['files_not_checked'], $full['components_checked'], $full['components_with_errors'] ], [ 1124, 3, 40, 2, 22, 16 ], 'full: counts' );
+eq( [ $full['errors'], $full['warnings'], $full['files_checked'], $full['files_not_checked'], $full['components_checked'], $full['components_with_errors'] ], [ 1132, 3, 48, 4, 22, 18 ], 'full: counts' );
 check( $full['php_bytes'] > 0 && is_int( $full['duration_s'] ), 'full: php_bytes and duration_s' );
 eq( array_keys( $full['tool'] ), [ 'phpcs', 'phpcompatibility', 'phpcompatibility_wp', 'image' ], 'full: tool keys' );
 check( 0 === strpos( $full['tool']['phpcs'], '4.0.' ) && '10.0.0-alpha3' === $full['tool']['phpcompatibility'] && '3.0.0-alpha3' === $full['tool']['phpcompatibility_wp'], 'full: tool versions' );
@@ -110,9 +110,11 @@ eq(
 	comp_rows( $rep ),
 	[
 		[ 'plugin', 'many', null, 'Many', null, 1, 1100, 0 ],
+		[ 'other', '', null, null, null, 9, 6, 0 ],
 		[ 'plugin', 'annotated', null, 'Annotated', null, 5, 5, 0 ],
 		[ 'plugin', 'order', null, 'Order', null, 3, 3, 0 ],
 		[ 'plugin', 'cachey', null, 'Cachey', null, 4, 2, 0 ],
+		[ 'plugin', 'clean', null, 'Clean Plugin', null, 3, 2, 0 ],
 		[ 'plugin', 'hello.php', null, 'Hello Single', '0.9', 1, 2, 0 ],
 		[ 'plugin', 'legacy', null, 'Legacy Plugin', '1.2.3', 2, 2, 0 ],
 		[ 'plugin', 'broken', null, 'Broken', null, 1, 1, 0 ],
@@ -123,14 +125,12 @@ eq(
 		[ 'plugin', 'utf', null, 'Utf', null, 2, 1, 0 ],
 		[ 'plugin', 'branchy', 'main', 'Branchy', '0.1', 1, 1, 0 ],
 		[ 'theme', 'demo', null, 'Demo Theme', '2.1', 1, 1, 0 ],
-		[ 'other', '', null, null, null, 4, 1, 0 ],
 		[ 'other', 'wp-config.php', null, null, null, 1, 1, 0 ],
+		[ 'other', '', 'main', null, null, 2, 1, 0 ],
 		[ 'plugin', 'warnonly', null, 'Warn Only', '3.0', 1, 0, 2 ],
 		[ 'mu-plugin', 'mu-plugins', null, null, null, 2, 0, 1 ],
-		[ 'plugin', 'clean', null, 'Clean Plugin', null, 1, 0, 0 ],
 		[ 'plugin', 'loop', null, 'Loop', null, 1, 0, 0 ],
 		[ 'theme', 'fifo', null, 'fifo', null, 1, 0, 0 ],
-		[ 'other', '', 'main', null, null, 1, 0, 0 ],
 	],
 	'full: components, grouping, names, versions, branches, order'
 );
@@ -156,12 +156,20 @@ foreach ( $rep['components'] ?? [] as $c ) {
 		$files[ $c['type'] . ':' . $c['slug'] . ':' . $c['branch'] . ':' . $f['file'] ] = true;
 	}
 }
-eq( $total, 1127, 'full: report has every finding (>1,000, uncapped)' );
+eq( $total, 1135, 'full: report has every finding (>1,000, uncapped)' );
 eq( count( $rep['components'][0]['findings'] ?? [] ), 1100, 'full: 1,100 findings of one component all listed' );
 
 ksort( $files );
 $expect_files = [
+	'other:::cache/c.php',
+	'other:::languages/de_DE.l10n.php',
 	'other:::lib/helper.php',
+	'other:::node_modules/n.php',
+	'other:::upgrade/u.php',
+	'other:::uploads/evil.php',
+	'other::main:uploads/evil.php',
+	'plugin:clean::.git/hooks/y.php',
+	'plugin:clean::node_modules/pkg/x.php',
 	'other:wp-config.php::htdocs/wp-config.php',
 	'plugin:annotated::annotated.php',
 	'plugin:annotated::disable.php',
@@ -188,7 +196,7 @@ $expect_files = [
 	'theme:demo::functions.php',
 ];
 sort( $expect_files );
-eq( array_keys( $files ), $expect_files, 'full: findings per file (paths relative to the component; skips, core, links to core/ancestors and outside code absent; invalid UTF-8 and control characters substituted)' );
+eq( array_keys( $files ), $expect_files, 'full: findings per file (paths relative to the component; core, links to core/ancestors and outside code absent; code files in skipped dirs, languages/ and a branch\'s uploads/ checked; invalid UTF-8 and control characters substituted)' );
 
 $legacy = comp_of( $rep, 'plugin', 'legacy' )['findings'] ?? [];
 eq(
@@ -201,7 +209,7 @@ eq( array_column( comp_of( $rep, 'plugin', 'annotated' )['findings'] ?? [], 'fil
 eq( array_column( comp_of( $rep, 'plugin', 'order' )['findings'] ?? [], 'file' ), [ "a\u{FFFD}b.php", 'b.php', 'c.php' ], 'full: findings in file order with a STDIN file first' );
 eq( array_column( comp_of( $rep, 'plugin', 'incl' )['findings'] ?? [], 'file' ), [ 'link.php' ], 'full: .php link to a .inc file checked under the link name' );
 eq( comp_of( $rep, 'plugin', 'hardlink' )['files'] ?? null, 1, 'full: hard-linked file counted once' );
-eq( [ comp_of( $rep, 'plugin', 'index.php' ), comp_of( $rep, 'other', '' )['files'] ?? null ], [ [], 4 ], 'full: header-less plugins/index.php is in other, not a plugin' );
+eq( [ comp_of( $rep, 'plugin', 'index.php' ), comp_of( $rep, 'other', '' )['files'] ?? null ], [ [], 9 ], 'full: header-less plugins/index.php is in other, not a plugin' );
 $raw = raw( 'full.report.json' );
 check( false === strpos( $raw, "\u{202E}" ) && false === strpos( $raw, "\u{9B}" ) && false === strpos( $raw, "\x7f" ) && false === strpos( $raw, '\\u001b' ), 'full: no bidi, C1, DEL or escape characters in report.json' );
 
@@ -210,16 +218,18 @@ eq(
 	[
 		[ 'type' => 'plugin', 'slug' => 'dangling', 'branch' => null, 'file' => 'dangling', 'reason' => 'unreadable' ],
 		[ 'type' => 'plugin', 'slug' => 'locked', 'branch' => null, 'file' => './', 'reason' => 'unreadable' ],
+		[ 'type' => 'other', 'slug' => '', 'branch' => 'main', 'file' => 'cache', 'reason' => 'unreadable' ],
+		[ 'type' => 'other', 'slug' => '', 'branch' => 'main', 'file' => 'upgrade', 'reason' => 'unreadable' ],
 	],
-	'full: not_checked has the dangling link and the unlistable dir'
+	'full: not_checked has the dangling link, the unlistable dir, and bad links in a branch (skipped names are no skip there)'
 );
-eq( trim( (string) file_get_contents( "$dir/full.outdir" ) ), './report.json', 'full: /out holds only report.json' );
+eq( trim( (string) file_get_contents( "$dir/full.outdir" ) ), "./manifest.json\n./report.json", 'full: /out holds only manifest.json and report.json' );
 
 // ---------------------------------------------------------- verdict variants
 
 $clean = out( 'clean' );
 eq( [ $clean['status'] ?? null, field( $clean, 'safe_to_upgrade' ), $clean['errors'] ?? null, $clean['warnings'] ?? null, $clean['files_not_checked'] ?? null ], [ 'ok', true, 0, 3, 0 ], 'clean: true with warnings only' );
-eq( report( 'clean' )['not_checked'] ?? null, [], 'clean: not_checked empty' );
+eq( report( 'clean' )['not_checked'] ?? null, [], 'clean: not_checked empty (skipped dirs without code are silent)' );
 
 $null = out( 'null' );
 eq( [ $null['status'] ?? null, field( $null, 'safe_to_upgrade' ), $null['errors'] ?? null, $null['files_not_checked'] ?? null ], [ 'ok', null, 0, 2 ], 'null: null when only unreadable entries' );
@@ -236,9 +246,9 @@ foreach ( [ 'batchmem' => 'single-file step', 'filemem' => 'higher-memory retry'
 
 $all = out( 'allmem' );
 $r   = report( 'allmem' );
-eq( [ field( $all, 'safe_to_upgrade' ), $all['errors'] ?? null, $all['files_checked'] ?? null, $all['files_not_checked'] ?? null ], [ null, 0, 0, 42 ], 'allmem: nothing checked, verdict null' );
+eq( [ field( $all, 'safe_to_upgrade' ), $all['errors'] ?? null, $all['files_checked'] ?? null, $all['files_not_checked'] ?? null ], [ null, 0, 0, 52 ], 'allmem: nothing checked, verdict null' );
 $reasons = array_count_values( array_column( $r['not_checked'] ?? [], 'reason' ) );
-eq( $reasons, [ 'unreadable' => 2, 'memory' => 40 ], 'allmem: every file in not_checked with reason memory' );
+eq( $reasons, [ 'unreadable' => 4, 'memory' => 48 ], 'allmem: every file in not_checked with reason memory' );
 
 $oom = out( 'oom' );
 eq( field( $oom, 'safe_to_upgrade' ), null, 'oom: verdict null' );
@@ -304,19 +314,21 @@ eq( [ out( 'php-rel-link' )['errors'] ?? null ], [ 3 ], 'php-rel-link: symlinked
 
 $php = out( 'php' );
 $r   = report( 'php' );
-eq( [ $php['status'] ?? null, field( $php, 'safe_to_upgrade' ), $php['errors'] ?? null, $php['warnings'] ?? null, $php['files_checked'] ?? null ], [ 'ok', false, 3, 1, 7 ], 'php: verdict and counts (root is htdocs, WordPress skips not applied)' );
+eq( [ $php['status'] ?? null, field( $php, 'safe_to_upgrade' ), $php['errors'] ?? null, $php['warnings'] ?? null, $php['files_checked'] ?? null ], [ 'ok', false, 5, 1, 9 ], 'php: verdict and counts (root is htdocs, WordPress skips not applied; code in node_modules/ and .git/ checked)' );
 eq(
 	comp_rows( $r ),
 	[
+		[ 'other', '', null, null, null, 3, 2, 0 ],
 		[ 'directory', 'app', null, null, null, 2, 1, 1 ],
 		[ 'directory', 'uploads', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'vendor', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'cache', null, null, null, 1, 0, 0 ],
 		[ 'directory', 'public', null, null, null, 1, 0, 0 ],
-		[ 'other', '', null, null, null, 1, 0, 0 ],
 	],
 	'php: directory components'
 );
+eq( array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ), [ '.git/y.php', 'node_modules/x.php' ], 'php: code files in node_modules/ and .git/ are checked' );
+eq( $r['not_checked'] ?? null, [], 'php: not_checked empty (assets/node_modules/ without code is silent)' );
 
 // ------------------------------------------------------------ other statuses
 
@@ -385,23 +397,24 @@ tool_error( 'est-factors', 'bad arguments: COMPAT_LOW_FACTOR must be at most 1',
 
 $ws = out( 'wpscope' );
 $wr = report( 'wpscope' );
-eq( [ $ws['status'] ?? null, field( $ws, 'safe_to_upgrade' ), $ws['errors'] ?? null, $ws['files_checked'] ?? null, $ws['files_not_checked'] ?? null ], [ 'ok', false, 11, 11, 0 ], 'wpscope: everything but core checked' );
+eq( [ $ws['status'] ?? null, field( $ws, 'safe_to_upgrade' ), $ws['errors'] ?? null, $ws['files_checked'] ?? null, $ws['files_not_checked'] ?? null ], [ 'ok', false, 13, 13, 3 ], 'wpscope: everything but core checked (the root\'s own index.php too)' );
 eq(
 	comp_rows( $wr ),
 	[
+		[ 'directory', 'htdocs', null, null, null, 2, 2, 0 ],
 		[ 'directory', 'htdocs/forum', null, null, null, 2, 2, 0 ],
+		[ 'other', '', 'htdocs/content', null, null, 2, 2, 0 ],
 		[ 'plugin', 'plug-in', null, 'Plug In', null, 1, 1, 0 ],
 		[ 'plugin', 'plug-v', null, 'Plug V', null, 1, 1, 0 ],
 		[ 'plugin', 'moved', 'htdocs/content', 'Moved', null, 1, 1, 0 ],
 		[ 'theme', 'theme-in', null, 'Theme In', null, 1, 1, 0 ],
 		[ 'mu-plugin', 'mu-plugins', null, null, null, 1, 1, 0 ],
-		[ 'directory', 'htdocs', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'htdocs/shared', null, null, null, 1, 1, 0 ],
 		[ 'directory', 'htdocs/wp', null, null, null, 1, 1, 0 ],
-		[ 'other', '', 'htdocs/content', null, null, 1, 1, 0 ],
 	],
 	'wpscope: links into the WordPress dir keep their component; a content dir beside wp-content is a branch; the rest are directories; core never'
 );
+eq( $wr['not_checked'] ?? null, [ nc( 'other', '', null, 'core-version.php', 'unreadable' ), nc( 'other', '', null, 'inc/', 'unreadable' ), [ 'type' => 'directory', 'slug' => 'htdocs/wp', 'branch' => null, 'file' => './', 'reason' => 'nested_wordpress' ] ], 'wpscope: links into the root\'s core are entries; the subdirectory install\'s core is reported, not skipped silently' );
 $ff = [];
 foreach ( $wr['components'] ?? [] as $c ) {
 	foreach ( $c['findings'] as $f ) {
@@ -409,9 +422,9 @@ foreach ( $wr['components'] ?? [] as $c ) {
 	}
 }
 sort( $ff );
-eq( $ff, [ ':object-cache.php', 'htdocs/forum:inc/version.php', 'htdocs/forum:index.php', 'htdocs/shared:loose.php', 'htdocs/wp:wp-content/plugins/stock/stock.php', 'htdocs:custom-api.php', 'moved:moved.php', 'mu-plugins:mu-link.php', 'plug-in:plug-in.php', 'plug-v:plug-v.php', 'theme-in:functions.php' ], 'wpscope: finding files (core, links to core or into it, and the content dir\'s uploads absent; a version.php outside core checked)' );
+eq( $ff, [ ':object-cache.php', ':uploads/up.php', 'htdocs/forum:inc/version.php', 'htdocs/forum:index.php', 'htdocs/shared:loose.php', 'htdocs/wp:wp-content/plugins/stock/stock.php', 'htdocs:custom-api.php', 'htdocs:index.php', 'moved:moved.php', 'mu-plugins:mu-link.php', 'plug-in:plug-in.php', 'plug-v:plug-v.php', 'theme-in:functions.php' ], 'wpscope: finding files (core and links to core or into it absent; the moved content dir\'s uploads/ checked; a version.php outside core checked)' );
 $e = out( 'est-wpscope' );
-eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 11, $ws['php_bytes'] ?? null, 10 ], 'est-wpscope: counts equal the scan' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 16, $ws['php_bytes'] ?? null, 10 ], 'est-wpscope: counts equal the scan' );
 
 $wm = out( 'wpmoved' );
 eq( [ $wm['status'] ?? null, field( $wm, 'safe_to_upgrade' ), $wm['errors'] ?? null, $wm['files_checked'] ?? null ], [ 'ok', false, 1, 2 ], 'wpmoved: no wp-content, a moved content dir is still checked' );
@@ -424,7 +437,8 @@ foreach ( [ 'wplink-dangling', 'wplink-out', 'phplink-dangling' ] as $name ) {
 }
 
 $pb = out( 'phpbeside' );
-eq( [ $pb['status'] ?? null, field( $pb, 'safe_to_upgrade' ), $pb['errors'] ?? null, $pb['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpbeside: code beside htdocs checked, tool caches not' );
+eq( [ $pb['status'] ?? null, field( $pb, 'safe_to_upgrade' ), $pb['errors'] ?? null, $pb['files_checked'] ?? null, $pb['files_not_checked'] ?? null ], [ 'ok', false, 2, 3, 2 ], 'phpbeside: code beside htdocs checked, tool dirs with code not_checked' );
+eq( report( 'phpbeside' )['not_checked'] ?? null, [ nc( 'directory', '..', null, '.composer/', 'skipped' ), nc( 'directory', '..', null, '.wp-cli/', 'skipped' ) ], 'phpbeside: dot dirs of /var/www holding code are skipped entries' );
 eq(
 	comp_rows( report( 'phpbeside' ) ),
 	[
@@ -439,7 +453,7 @@ $pd = out( 'phpdeep' );
 eq( [ $pd['status'] ?? null, field( $pd, 'safe_to_upgrade' ), $pd['errors'] ?? null, $pd['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], 'phpdeep: code two levels above the public dir checked' );
 eq( array_column( comp_of( report( 'phpdeep' ), 'directory', '../project' )['findings'] ?? [], 'file' ), [ 'app/src/boot.php', 'lib/x.php' ], 'phpdeep: ../project findings (public listed once, as htdocs)' );
 $e = out( 'est-phpbeside' );
-eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 3, 3 ], 'est-phpbeside: counts equal the scan' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 5, 3 ], 'est-phpbeside: counts equal the scan' );
 
 $bd = out( 'bedrock' );
 $bf = [];
@@ -451,6 +465,7 @@ foreach ( report( 'bedrock' )['components'] ?? [] as $c ) {
 sort( $bf );
 eq( [ $bd['status'] ?? null, field( $bd, 'safe_to_upgrade' ), $bd['errors'] ?? null ], [ 'ok', false, 5 ], 'bedrock: verdict and errors (web/app is inside a directory component, so its uploads/ is walked)' );
 eq( $bf, [ 'directory:htdocs/config:application.php', 'directory:htdocs/vendor:acme/lib/Lib.php', 'directory:htdocs/web:app/mu-plugins/m.php', 'directory:htdocs/web:app/plugins/p/p.php', 'directory:htdocs/web:app/uploads/u.php' ], 'bedrock: config/, vendor/ and web/app checked, web/wp core not' );
+eq( report( 'bedrock' )['not_checked'] ?? null, [ [ 'type' => 'directory', 'slug' => 'htdocs/web/wp', 'branch' => null, 'file' => './', 'reason' => 'nested_wordpress' ] ], 'bedrock: web/wp is not the scanned WordPress root, so its core is reported' );
 
 eq( trim( (string) file_get_contents( "$dir/tree" ) ), 'unchanged', 'fixture tree unchanged by scans and estimates' );
 eq( trim( (string) file_get_contents( "$dir/mount-rw" ) ), 'writable', 'mount probe: uid 33 can write the probe dir through a writable mount' );
@@ -460,11 +475,11 @@ eq( trim( (string) file_get_contents( "$dir/mount-ro" ) ), 'readonly', 'code mou
 
 $ext = out( 'ext' );
 $r   = report( 'ext' );
-eq( [ $ext['status'] ?? null, field( $ext, 'safe_to_upgrade' ), $ext['errors'] ?? null, $ext['warnings'] ?? null, $ext['files_checked'] ?? null, $ext['files_not_checked'] ?? null, $ext['components_checked'] ?? null, $ext['components_with_errors'] ?? null ], [ 'ok', false, 14, 0, 18, 3, 4, 3 ], 'ext: verdict and counts' );
+eq( [ $ext['status'] ?? null, field( $ext, 'safe_to_upgrade' ), $ext['errors'] ?? null, $ext['warnings'] ?? null, $ext['files_checked'] ?? null, $ext['files_not_checked'] ?? null, $ext['components_checked'] ?? null, $ext['components_with_errors'] ?? null ], [ 'ok', false, 15, 0, 19, 3, 4, 3 ], 'ext: verdict and counts' );
 eq(
 	comp_rows( $r ),
 	[
-		[ 'plugin', 'ext', null, 'Ext', null, 11, 10, 0 ],
+		[ 'plugin', 'ext', null, 'Ext', null, 12, 11, 0 ],
 		[ 'plugin', 'dedup', null, 'Dedup', null, 3, 2, 0 ],
 		[ 'other', '', null, null, null, 2, 2, 0 ],
 		[ 'plugin', 'hdr', null, 'hdr', null, 2, 0, 0 ],
@@ -473,8 +488,8 @@ eq(
 );
 eq(
 	array_column( comp_of( $r, 'plugin', 'ext' )['findings'] ?? [], 'file' ),
-	[ 'Mixed.Inc', 'UPPER.PHP', 'x.engine', 'x.inc', 'x.install', 'x.module', 'x.php5', 'x.php7', 'x.phtml', 'x.theme' ],
-	'ext: one finding per code extension, in any case, under the real name; readme.txt, x.phps and x.js not listed'
+	[ 'Mixed.Inc', 'UPPER.PHP', 'x.engine', 'x.inc', 'x.install', 'x.module', 'x.php5', 'x.php7', 'x.phps', 'x.phtml', 'x.theme' ],
+	'ext: one finding per code extension, in any case, under the real name; x.phps starts with <?php, so it is PHP too; readme.txt and x.js are never sniffed'
 );
 eq( array_unique( array_column( comp_of( $r, 'plugin', 'ext' )['findings'] ?? [], 'source' ) ), [ 'PHPCompatibility.FunctionUse.RemovedFunctions.eachDeprecatedRemoved' ], 'ext: canaries are the each() error' );
 eq( array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ), [ 'plugins/Loose.PHP', 'plugins/legacy.inc' ], 'ext: loose non-.php code files in plugins/ belong to other' );
@@ -497,7 +512,7 @@ eq(
 	$singles,
 	array_map(
 		static function ( $f ) { return "/var/www/htdocs/wp-content/plugins/$f"; },
-		[ 'Loose.PHP', 'dedup/b.inc', 'ext/Mixed.Inc', 'ext/UPPER.PHP', 'hdr/MAIN.PHP' ]
+		[ 'Loose.PHP', 'dedup/b.inc', 'ext/Mixed.Inc', 'ext/UPPER.PHP', 'ext/x.phps', 'hdr/MAIN.PHP' ]
 	),
 	'ext: names PHPCS filters by extension go through STDIN, once each'
 );
@@ -515,7 +530,7 @@ eq(
 	],
 	'ext-php: components'
 );
-eq( [ array_column( comp_of( $r, 'directory', 'app' )['findings'] ?? [], 'file' ), array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ) ], [ [ 'Y.PHTML' ], [ 'x.inc' ] ], 'ext-php: findings by file' );
+eq( [ array_column( comp_of( $r, 'directory', 'app' )['findings'] ?? [], 'file' ), array_column( comp_of( $r, 'other', '' )['findings'] ?? [], 'file' ) ], [ [ 'Y.PHTML' ], [ 'x.inc' ] ], 'ext-php: findings by file (readme.txt is never sniffed)' );
 eq( $r['not_checked'] ?? null, [ [ 'type' => 'other', 'slug' => '', 'branch' => null, 'file' => 'gone.inc', 'reason' => 'unreadable' ] ], 'ext-php: a dangling .inc link in the root is other, not a directory' );
 $e = out( 'est-ext-php' );
 eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ $ep['files_checked'] + $ep['files_not_checked'], $ep['php_bytes'] ?? null, $ep['components_checked'] ?? null ], 'est-ext-php: counts equal the scan' );
@@ -540,12 +555,283 @@ tool_error( 'badargs-dotdot', 'bad arguments: path must be', 2, false );
 tool_error( 'badargs-slashdot', 'bad arguments: path must be', 2, false );
 
 $tb = out( 'tempbackup' );
-eq( [ $tb['status'] ?? null, field( $tb, 'safe_to_upgrade' ), $tb['errors'] ?? null, $tb['files_checked'] ?? null ], [ 'ok', true, 0, 1 ], "tempbackup: WordPress' rollback copies in upgrade-temp-backup/ aren't scanned" );
-eq( comp_rows( report( 'tempbackup' ) ), [ [ 'plugin', 'p', null, 'P', null, 1, 0, 0 ] ], 'tempbackup: only the live plugin' );
+eq( [ $tb['status'] ?? null, field( $tb, 'safe_to_upgrade' ), $tb['errors'] ?? null, $tb['files_checked'] ?? null ], [ 'ok', false, 2, 3 ], "tempbackup: WordPress' rollback copies in upgrade-temp-backup/ are checked (not walked as plugins)" );
+eq( comp_rows( report( 'tempbackup' ) ), [ [ 'other', '', null, null, null, 2, 2, 0 ], [ 'plugin', 'p', null, 'P', null, 1, 0, 0 ] ], 'tempbackup: the copies belong to other' );
+eq( report( 'tempbackup' )['not_checked'] ?? null, [], 'tempbackup: not_checked empty' );
+
+// ------------------------------------------------------ nothing skipped silently
+
+function nc( string $type, string $slug, ?string $branch, string $file, string $reason ): array {
+	return [ 'type' => $type, 'slug' => $slug, 'branch' => $branch, 'file' => $file, 'reason' => $reason ];
+}
+
+/** "type:slug:branch:file" of every finding. */
+function finding_files( array $report ): array {
+	$out = [];
+	foreach ( $report['components'] ?? [] as $c ) {
+		foreach ( $c['findings'] as $f ) {
+			$out[] = $c['type'] . ':' . $c['slug'] . ':' . $c['branch'] . ':' . $f['file'];
+		}
+	}
+	sort( $out );
+	return $out;
+}
+
+$wf = out( 'wordfence' );
+eq( [ $wf['status'] ?? null, field( $wf, 'safe_to_upgrade' ), $wf['errors'] ?? null, $wf['files_checked'] ?? null, $wf['files_not_checked'] ?? null ], [ 'ok', true, 0, 17, 0 ], 'wordfence: Wordfence\'s wflogs/*.php (exit; __halt_compiler(); data, and a compiled rules.php) are checked and clean, in uploads/ and in wp-content' );
+eq( report( 'wordfence' )['not_checked'] ?? null, [], 'wordfence: not_checked empty' );
+
+$sd = out( 'skipdirs' );
+eq( [ $sd['status'] ?? null, field( $sd, 'safe_to_upgrade' ), $sd['errors'] ?? null, $sd['files_checked'] ?? null, $sd['files_not_checked'] ?? null ], [ 'ok', false, 7, 17, 2 ], 'skipdirs: code files in skipped dirs are checked' );
+eq(
+	finding_files( report( 'skipdirs' ) ),
+	[ 'directory:htdocs::node_modules/x.php', 'other:::.git/hooks/h.php', 'other:::cache/object/c.php', 'other:::node_modules/n.php', 'other:::uploads/2026/11/deep/shell.PHP', 'plugin:p::.git/y.php', 'plugin:p::node_modules/pkg/x.php' ],
+	'skipdirs: findings in uploads/ (any case, any depth), cache/, node_modules/ and .git/ at every level (not in non-code names there)'
+);
+eq( comp_of( report( 'skipdirs' ), 'other', '' )['files'] ?? null, 13, 'skipdirs: other has wflogs (8), upgrade-temp-backup, uploads, cache, node_modules and .git files' );
+eq(
+	report( 'skipdirs' )['not_checked'] ?? null,
+	[ nc( 'other', '', null, 'upgrade/pkg.phar', 'phar' ), nc( 'directory', 'htdocs', null, '.git/', 'unreadable' ) ],
+	'skipdirs: a phar in a skipped dir; a dangling skipped name is unreadable'
+);
+$e = out( 'est-skipdirs' );
+eq( [ $e['php_files'] ?? null, $e['php_bytes'] ?? null, $e['components'] ?? null ], [ 19, $sd['php_bytes'] ?? null, 3 ], 'est-skipdirs: counts equal the scan' );
+foreach ( [ 'skipdirs-files' => 'more than COMPAT_SKIPPED_FILES', 'skipdirs-bytes' => 'more than COMPAT_SKIPPED_BYTES (data-only files not counted)' ] as $name => $what ) {
+	$b = out( $name );
+	eq( [ $b['errors'] ?? null, $b['files_checked'] ?? null, $b['files_not_checked'] ?? null ], [ 6, 8, 3 ], "$name: uploads/ not listed" );
+	eq( report( $name )['not_checked'][1] ?? null, nc( 'other', '', null, 'uploads/', 'skipped' ), "$name: a skipped dir with $what of code is one entry" );
+}
+
+eq(
+	report( 'skipdirs-time' )['not_checked'] ?? null,
+	[
+		nc( 'plugin', 'p', null, '.git/', 'skipped' ),
+		nc( 'plugin', 'p', null, 'node_modules/', 'skipped' ),
+		nc( 'plugin', 'q', null, 'node_modules/', 'skipped' ),
+		nc( 'other', '', null, '.git/', 'skipped' ),
+		nc( 'other', '', null, 'cache/', 'skipped' ),
+		nc( 'other', '', null, 'node_modules/', 'skipped' ),
+		nc( 'other', '', null, 'upgrade-temp-backup/', 'skipped' ),
+		nc( 'other', '', null, 'upgrade/', 'skipped' ),
+		nc( 'other', '', null, 'uploads/', 'skipped' ),
+		nc( 'directory', 'htdocs', null, '.git/', 'unreadable' ),
+		nc( 'directory', 'htdocs', null, 'node_modules/', 'skipped' ),
+	],
+	'skipdirs-time: with no time left for skipped dirs, each one with anything in it is a skipped entry, code or not'
+);
+
+$sp = out( 'skipdirs-php' );
+eq( [ $sp['status'] ?? null, field( $sp, 'safe_to_upgrade' ), $sp['errors'] ?? null, $sp['files_checked'] ?? null, $sp['files_not_checked'] ?? null ], [ 'ok', false, 7, 18, 2 ], 'skipdirs-php: a php site walks uploads/ and cache/ whole (a .txt is never sniffed); node_modules/ and .git/ code files checked' );
+eq(
+	report( 'skipdirs-php' )['not_checked'] ?? null,
+	[ nc( 'other', '', null, '.git/', 'unreadable' ), nc( 'directory', 'wp-content', null, 'upgrade/pkg.phar', 'phar' ) ],
+	'skipdirs-php: not_checked'
+);
+
+$cl = out( 'contentlike' );
+eq( [ $cl['status'] ?? null, field( $cl, 'safe_to_upgrade' ), $cl['errors'] ?? null, $cl['files_checked'] ?? null, $cl['files_not_checked'] ?? null ], [ 'ok', false, 2, 3, 0 ], 'contentlike: verdict and counts' );
+eq( finding_files( report( 'contentlike' ) ), [ 'other::htdocs/tools:cache/shell.php', 'other::main:uploads/u.php' ], 'contentlike: cache/ and uploads/ of a content root other than wp-content are checked' );
+
+$pn = out( 'pluginnm' );
+eq( [ $pn['status'] ?? null, field( $pn, 'safe_to_upgrade' ), $pn['errors'] ?? null, $pn['files_checked'] ?? null ], [ 'ok', false, 3, 3 ], 'pluginnm: verdict and counts' );
+eq(
+	comp_rows( report( 'pluginnm' ) ),
+	[
+		[ 'plugin', '.git', null, '.git', null, 1, 1, 0 ],
+		[ 'plugin', 'node_modules', null, 'Evil', null, 1, 1, 0 ],
+		[ 'theme', 'node_modules', null, 'NM', null, 1, 1, 0 ],
+	],
+	'pluginnm: plugin and theme dirs named node_modules or .git are scanned'
+);
+
+$ln = out( 'l10n' );
+eq( [ $ln['status'] ?? null, field( $ln, 'safe_to_upgrade' ), $ln['errors'] ?? null, $ln['files_checked'] ?? null, $ln['files_not_checked'] ?? null ], [ 'ok', false, 1, 2, 0 ], 'l10n: languages/ is checked' );
+eq( finding_files( report( 'l10n' ) ), [ 'other:::languages/plugins/x-de_DE.l10n.php' ], 'l10n: a .l10n.php file is checked, as part of other (languages/ is not a content root)' );
+
+$sn = out( 'sniff' );
+$r  = report( 'sniff' );
+eq( [ $sn['status'] ?? null, field( $sn, 'safe_to_upgrade' ), $sn['errors'] ?? null, $sn['files_checked'] ?? null, $sn['files_not_checked'] ?? null ], [ 'ok', false, 4, 6, 5 ], 'sniff: verdict and counts (README.md, notes.txt, app.js, app.ts, style.css, data.json, big.txt and logo.png are not sniffed or not PHP)' );
+eq( array_column( array_filter( comp_of( $r, 'plugin', 'p' )['findings'] ?? [], static function ( $f ) { return 'WARNING' === $f['type']; } ), 'file' ), [ 'views/warn.html' ], 'sniff: a later tag with warnings only is checked and its warnings kept' );
+eq( finding_files( $r ), [ 'plugin:p::a-tpl.txt', 'plugin:p::bin/tool', 'plugin:p::views/admin.tpl', 'plugin:p::views/bom.html', 'plugin:p::views/warn.html' ], 'sniff: files starting with <?php or <?= (after a #! line or a BOM) are PHP; so is a link to a .php file (checked under the link name); warn.html has a warning' );
+eq(
+	$r['not_checked'] ?? null,
+	[
+		nc( 'plugin', 'p', null, 'a-lib.php', 'phar' ),
+		nc( 'plugin', 'p', null, 'big-mixed.tpl', 'php_tag' ),
+		nc( 'plugin', 'p', null, 'gone.phar', 'unreadable' ),
+		nc( 'plugin', 'p', null, 'lib.phar.tar.gz', 'phar' ),
+		nc( 'plugin', 'p', null, 'views/page.html', 'php_tag' ),
+	],
+	'sniff: a phar, first reached through a .php link to it (listed once, as the link), a dangling .phar link, a .phar.tar.gz, and text with a later PHP tag that is too large or has errors'
+);
+$e = out( 'est-sniff' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null, $e['inputs']['stdin_files'] ?? null ], [ 11, 1, 5 ], 'est-sniff: counts equal the scan; 5 files go through STDIN' );
+$sp = out( 'sniff-php' );
+eq( [ $sp['status'] ?? null, field( $sp, 'safe_to_upgrade' ), $sp['errors'] ?? null, $sp['files_checked'] ?? null, $sp['files_not_checked'] ?? null ], [ 'ok', false, 4, 6, 5 ], 'sniff-php: the same on a php site' );
+eq( array_column( report( 'sniff-php' )['not_checked'] ?? [], 'reason' ), [ 'phar', 'php_tag', 'unreadable', 'phar', 'php_tag' ], 'sniff-php: same not_checked reasons' );
+
+$ne = out( 'nested' );
+$r  = report( 'nested' );
+eq( [ $ne['status'] ?? null, field( $ne, 'safe_to_upgrade' ), $ne['errors'] ?? null, $ne['files_checked'] ?? null, $ne['files_not_checked'] ?? null ], [ 'ok', false, 5, 5, 2 ], 'nested: verdict and counts' );
+eq( finding_files( $r ), [ 'directory:htdocs/old::custom.php', 'directory:htdocs/old::index.php', 'directory:htdocs::index.php', 'directory:htdocs::wp-custom.php', 'plugin:fakecore::index.php' ], 'nested: non-core files and every index.php are checked; core (wp-settings.php, wp-includes/) is not' );
+eq(
+	$r['not_checked'] ?? null,
+	[
+		nc( 'directory', 'htdocs/old', null, './', 'nested_wordpress' ),
+		nc( 'directory', 'htdocs/wp-content/plugins/fakecore', null, './', 'nested_wordpress' ),
+	],
+	'nested: another install\'s core (also inside a plugin, also behind a link) is reported once per install'
+);
+$e = out( 'est-nested' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 7, 3 ], 'est-nested: counts equal the scan' );
+
+$hg = out( 'hang' );
+$r  = report( 'hang' );
+eq( [ $hg['status'] ?? null, field( $hg, 'safe_to_upgrade' ) ], [ 'ok', null ], 'hang: sniffed files that outrun their cap don\'t stop the scan' );
+check( in_array( nc( 'plugin', 'p', null, 'views/slow.tpl', 'timeout' ), $r['not_checked'] ?? [], true ), 'hang: slow.tpl is a timeout entry after COMPAT_SNIFFED_TIMEOUT' );
+// hang.tpl hangs this PHPCompatibility; a release that fixes that may check it or make it php_tag instead.
+$others = array_values( array_filter( $r['not_checked'] ?? [], static function ( $n ) { return 'views/slow.tpl' !== $n['file']; } ) );
+check( [] === $others || ( 1 === count( $others ) && 'views/hang.tpl' === $others[0]['file'] && in_array( $others[0]['reason'], [ 'timeout', 'php_tag' ], true ) ), 'hang: hang.tpl is timeout, php_tag or checked (' . json_encode( $others ) . ')' );
+check( ( $hg['duration_s'] ?? 99 ) < 30, 'hang: the scan ends soon after the caps (' . ( $hg['duration_s'] ?? '?' ) . ' s)' );
+
+foreach ( [ 'cache' => 2506, 'cache50k' => 50006 ] as $name => $n ) {
+	$ca = out( $name );
+	eq( [ $ca['status'] ?? null, field( $ca, 'safe_to_upgrade' ), $ca['errors'] ?? null, $ca['files_checked'] ?? null, $ca['files_not_checked'] ?? null ], [ 'ok', false, 1, $n, 0 ], "$name: W3TC, WP Super Cache and Wordfence-style data files are checked without PHPCS; Docket Cache code and a data file too large to read to the end are scanned" );
+	eq( finding_files( report( $name ) ), [ 'other:::cache/object/tail.php' ], "$name: a data header followed by another open tag is scanned" );
+	check( ( $ca['duration_s'] ?? 999 ) < 120, "$name: done in " . ( $ca['duration_s'] ?? '?' ) . ' s' );
+}
+check( 1 === preg_match_all( '/\] batch 4 files rc=/', raw( 'cache.stderr' ) ), 'cache: one PHPCS batch, of p.php, the Docket Cache file, tail.php and huge.php (data-only files take no run)' );
+$e = out( 'est-cache' );
+eq( [ $e['php_files'] ?? null, $e['components'] ?? null ], [ 2506, 2 ], 'est-cache: counts equal the scan' );
 
 $el = tool_error( 'est-listing', 'too large to estimate in 1 s: ', 1, false );
 eq( array_keys( $el ), [ 'v', 'status', 'estimate', 'site', 'target', 'safe_to_upgrade', 'detail' ], 'est-listing: reduced keys' );
 check( 1 === preg_match( '/^too large to estimate in 1 s: (\d+) PHP files listed before the time ran out; run the check itself, without --estimate\z/', $el['detail'] ?? '', $m ) && (int) $m[1] < 20000, 'est-listing: detail counts the files listed so far (' . ( $el['detail'] ?? '' ) . ')' );
+
+// STDIN: a first line starting `phpcs_input_file:` is checked at its own line numbers (LF, CRLF, CR), also in a name
+// with a newline and in a sniffed file; names that differ only in control characters stay two entries.
+$sd = out( 'stdin' );
+$r  = report( 'stdin' );
+eq( [ $sd['status'] ?? null, field( $sd, 'safe_to_upgrade' ), $sd['errors'] ?? null, $sd['files_checked'] ?? null, $sd['files_not_checked'] ?? null ], [ 'ok', false, 8, 6, 3 ], 'stdin: verdict and counts' );
+$rows = [];
+foreach ( comp_of( $r, 'plugin', 's' )['findings'] ?? [] as $f ) {
+	$rows[] = $f['file'] . ':' . $f['line'] . ':' . substr( strrchr( $f['source'], '.' ), 1 );
+}
+eq(
+	$rows,
+	[
+		'X.PHP:1:create_functionDeprecatedRemoved', 'X.PHP:2:eachDeprecatedRemoved',
+		'cr.PHP:1:create_functionDeprecatedRemoved', 'cr.PHP:2:eachDeprecatedRemoved',
+		'crlf.PHP:1:create_functionDeprecatedRemoved', 'crlf.PHP:2:eachDeprecatedRemoved',
+		"new\u{FFFD}line.php:1:create_functionDeprecatedRemoved", "new\u{FFFD}line.php:2:eachDeprecatedRemoved",
+	],
+	'stdin: findings on line 1 and 2 of each file read through STDIN'
+);
+eq( $r['not_checked'] ?? null, [ nc( 'plugin', 's', null, 'bin/tool', 'php_tag' ), nc( 'plugin', 's', null, "t\u{FFFD}.tpl", 'php_tag' ), nc( 'plugin', 's', null, "t\u{FFFD}.tpl", 'php_tag' ) ], 'stdin: the sniffed file with code on its first line is php_tag; the twins are two entries' );
+$m = json_decode( raw( 'stdin.manifest.json' ), true );
+$p = '/var/www/htdocs/wp-content/plugins/';
+eq( $m['not_checked'] ?? null, [ $p . 's/bin/tool', $p . "s/t\x01.tpl", $p . "s/t\x02.tpl" ], 'stdin: manifest not_checked by real path, control characters kept' );
+check( in_array( 'b64:' . base64_encode( $p . "\xff/node_modules/" ), $m['sniff']['skipped_dirs'] ?? [], true ), 'stdin: a skipped dir under a non-UTF-8 name is b64: in sniff.skipped_dirs' );
+
+// Php sites: dot dirs of /var/www (the www-data home) are one entry when they hold code; one holding the public dir is walked.
+$pd = out( 'phpdot' );
+eq( [ $pd['status'] ?? null, field( $pd, 'safe_to_upgrade' ), $pd['errors'] ?? null, $pd['files_checked'] ?? null, $pd['files_not_checked'] ?? null ], [ 'ok', false, 2, 3, 2 ], 'phpdot: verdict and counts' );
+eq( finding_files( report( 'phpdot' ) ), [ 'directory:../.release::lib/helper.php', 'directory:..::.user.php' ], 'phpdot: code beside the public dir in .release, and a dot file, are checked' );
+eq( report( 'phpdot' )['not_checked'] ?? null, [ nc( 'directory', '..', null, '.composer/', 'skipped' ), nc( 'directory', '..', null, '.wp-cli/', 'skipped' ) ], 'phpdot: dot dirs holding code (a code name, or a sniffed vendor/bin script) are entries; caches are not' );
+$m = json_decode( raw( 'phpdot.manifest.json' ), true );
+eq( [ $m['sniff']['skipped_dirs'] ?? null, $m['not_checked'] ?? null ], [ [], [ '/var/www/.composer/', '/var/www/.wp-cli/' ] ], 'phpdot: manifest not_checked; dot dirs are not skipped dirs (the sniff applies there)' );
+$pr = out( 'phpdot-root' );
+eq( [ $pr['status'] ?? null, field( $pr, 'safe_to_upgrade' ), $pr['files_checked'] ?? null, $pr['files_not_checked'] ?? null ], [ 'ok', true, 1, 0 ], 'phpdot-root: htdocs -> .release is scanned as the root; tool caches give no entry' );
+eq( json_decode( raw( 'phpdot-root.manifest.json' ), true )['sniff']['skipped_dirs'] ?? null, [], 'phpdot-root: no skipped dirs' );
+
+// A directory uid 33 can list but not search is one entry, also inside a skipped dir.
+$ut = out( 'untrav' );
+eq( [ $ut['status'] ?? null, field( $ut, 'safe_to_upgrade' ), $ut['files_checked'] ?? null, $ut['files_not_checked'] ?? null ], [ 'ok', null, 1, 2 ], 'untrav: verdict and counts' );
+eq( report( 'untrav' )['not_checked'] ?? null, [ nc( 'plugin', 'lk', null, 'locked/', 'unreadable' ), nc( 'other', '', null, 'uploads/locked/', 'unreadable' ) ], 'untrav: unsearchable dirs are directory entries' );
+eq( json_decode( raw( 'untrav.manifest.json' ), true )['not_checked'] ?? null, [ '/var/www/htdocs/wp-content/plugins/lk/locked/', '/var/www/htdocs/wp-content/uploads/locked/' ], 'untrav: manifest directory entries end with /' );
+
+// 20,000 not_checked entries in 10M of entrypoint memory: the manifest keeps no set of them.
+$pf = out( 'pharflood' );
+eq( [ $pf['status'] ?? null, $pf['files_not_checked'] ?? null ], [ 'ok', 20000 ], 'pharflood: many not_checked entries in little memory' );
+
+// ----------------------------------------------------------- file manifest
+
+// r7: a link into an old release or the root's core is an entry by the link's own path (a release pointer beside
+// current, and a non-code file link, aren't); php home dot dirs; the per-file cap; the STDIN copy cap.
+$ol = out( 'oldlink' );
+eq( [ $ol['status'] ?? null, field( $ol, 'safe_to_upgrade' ), $ol['files_checked'] ?? null, $ol['files_not_checked'] ?? null ], [ 'ok', null, 1, 5 ], 'oldlink: links into an old release give no verdict' );
+eq( report( 'oldlink' )['not_checked'] ?? null, [ nc( 'directory', 'current', null, 'h.php', 'unreadable' ), nc( 'directory', 'current', null, 'lib/', 'unreadable' ), nc( 'directory', 'current', null, 'vendor/', 'unreadable' ), nc( 'directory', 'shared', null, 'vendor/', 'unreadable' ), nc( 'other', '', null, 'vend/', 'unreadable' ) ], 'oldlink: a file, a relative and an absolute dir link, shared/ and a top-level link into the old release; not previous or notes.txt' );
+eq( json_decode( raw( 'oldlink.manifest.json' ), true )['not_checked'] ?? null, [ '/var/www/htdocs/releases/2/h.php', '/var/www/htdocs/releases/2/lib/', '/var/www/htdocs/releases/2/vendor/', '/var/www/htdocs/shared/vendor/', '/var/www/htdocs/vend/' ], 'oldlink: manifest names each link where it is, not its target' );
+$cl = out( 'corelink' );
+eq( [ $cl['status'] ?? null, field( $cl, 'safe_to_upgrade' ), $cl['files_checked'] ?? null, $cl['files_not_checked'] ?? null ], [ 'ok', null, 2, 11 ], 'corelink: links into core and out of /var/www give no verdict' );
+eq( report( 'corelink' )['not_checked'] ?? null, [ nc( 'other', '', null, 'mu-plugins/', 'unreadable' ), nc( 'plugin', 'clean', null, 'boot.php', 'unreadable' ), nc( 'plugin', 'clean', null, 'inc/', 'unreadable' ), nc( 'other', '', null, 'plugins/coreplug/', 'unreadable' ), nc( 'plugin', 'lnk', null, 'lib.d', 'unreadable' ), nc( 'plugin', 'lnk', null, 'part', 'unreadable' ), nc( 'plugin', 'lnk', null, 'shm', 'unreadable' ), nc( 'other', '', null, 'themes/t/', 'unreadable' ), nc( 'other', '', null, 'cache/', 'unreadable' ), nc( 'other', '', null, 'uploads/d/', 'unreadable' ), nc( 'other', '', null, 'uploads/x.php', 'unreadable' ) ], 'corelink: core links (file, dir, plugin dir, theme dir, mu-plugins, a skipped name, links in uploads/) and lib.d/part/shm leaving the mount; not v.txt, out.log, readme.txt, or links to exactly /dev/null, /dev/stdout, /dev/stderr (debug.log, error_log, access, trace)' );
+eq( json_decode( raw( 'corelink.manifest.json' ), true )['not_checked'] ?? null, [ '/var/www/htdocs/wp-content/mu-plugins/', '/var/www/htdocs/wp-content/plugins/clean/boot.php', '/var/www/htdocs/wp-content/plugins/clean/inc/', '/var/www/htdocs/wp-content/plugins/coreplug/', '/var/www/htdocs/wp-content/plugins/lnk/lib.d', '/var/www/htdocs/wp-content/plugins/lnk/part', '/var/www/htdocs/wp-content/plugins/lnk/shm', '/var/www/htdocs/wp-content/themes/t/', '/var/www/htdocs/wp-content/cache/', '/var/www/htdocs/wp-content/uploads/d/', '/var/www/htdocs/wp-content/uploads/x.php' ], 'corelink: manifest by link path, never a core path' );
+$ph = out( 'phphome' );
+eq( [ $ph['status'] ?? null, field( $ph, 'safe_to_upgrade' ), $ph['files_checked'] ?? null, $ph['files_not_checked'] ?? null ], [ 'ok', null, 2, 3 ], 'phphome: verdict and counts' );
+eq( report( 'phphome' )['not_checked'] ?? null, [ nc( 'directory', '..', null, '.emptylocked/', 'unreadable' ), nc( 'directory', '..', null, '.locked2/', 'unreadable' ), nc( 'directory', '..', null, '.x.php', 'unreadable' ) ], 'phphome: dot dirs uid 33 can\'t open are unreadable; dangling non-code links and a dot link to a walked dir give nothing' );
+eq( json_decode( raw( 'phphome.manifest.json' ), true )['checked'] ?? null, [ '/var/www/htdocs/index.php', '/var/www/lib/l.php' ], 'phphome: the dot link\'s target is checked by its own name' );
+foreach ( [ 'homebudget-skipped0' => [ nc( 'other', '', null, 'node_modules/', 'skipped' ) ], 'homebudget-home0' => [ nc( 'directory', '..', null, '.cache/', 'skipped' ) ] ] as $name => $want ) {
+	$hb = out( $name );
+	eq( [ $hb['status'] ?? null, field( $hb, 'safe_to_upgrade' ), $hb['files_checked'] ?? null ], [ 'ok', null, 1 ], "$name: verdict and counts" );
+	eq( report( $name )['not_checked'] ?? null, $want, "$name: dot dirs and skipped dirs have separate time budgets" );
+}
+$sc = out( 'slowcode' );
+eq( [ $sc['status'] ?? null, field( $sc, 'safe_to_upgrade' ), $sc['errors'] ?? null, $sc['files_checked'] ?? null, $sc['files_not_checked'] ?? null ], [ 'ok', false, 1, 3, 1 ], 'slowcode: a code-named file past COMPAT_FILE_TIMEOUT doesn\'t stop the scan' );
+eq( report( 'slowcode' )['not_checked'] ?? null, [ nc( 'plugin', 'p', null, 'slow.php', 'timeout' ) ], 'slowcode: the slow file alone is timeout; its batch neighbours are checked' );
+check( false !== strpos( raw( 'slowcode.stderr' ), ' capped' ), 'slowcode: the batch run was capped' );
+check( ( $sc['duration_s'] ?? 99 ) < 60, 'slowcode: the scan ends soon after the caps (' . ( $sc['duration_s'] ?? '?' ) . ' s)' );
+$bs = out( 'bigstdin' );
+eq( [ $bs['status'] ?? null, field( $bs, 'safe_to_upgrade' ), $bs['errors'] ?? null, $bs['files_checked'] ?? null, $bs['files_not_checked'] ?? null ], [ 'ok', false, 1, 2, 1 ], 'bigstdin: verdict and counts' );
+$r = report( 'bigstdin' );
+eq( array_map( static function ( $f ) { return [ $f['file'], $f['line'] ]; }, comp_of( $r, 'plugin', 'p' )['findings'] ?? [] ), [ [ 'BIG.PHP', 40002 ] ], 'bigstdin: a 1 MiB STDIN file is read to its last line' );
+eq( $r['not_checked'] ?? null, [ nc( 'plugin', 'p', null, 'HUGE.PHP', 'memory' ) ], 'bigstdin: a STDIN file over 16 MiB isn\'t copied: memory' );
+$e = out( 'est-bigstdin' );
+eq( [ $e['php_files'] ?? null, $e['inputs']['stdin_files'] ?? null ], [ 3, 1 ], 'est-bigstdin: the file over the STDIN cap is no PHPCS run' );
+
+// Every ok scan writes manifest.json; its checked/not_checked match the counts, and every code file of the tree, by the
+// manifest's own rules, is covered (tests/manifest-check.php ran against the scanned tree).
+$manifests = 0;
+foreach ( glob( "$dir/*.stdout" ) as $f ) {
+	$name = basename( $f, '.stdout' );
+	$doc  = json_decode( (string) file_get_contents( $f ), true );
+	if ( ! is_array( $doc ) || 'ok' !== ( $doc['status'] ?? null ) || ! empty( $doc['estimate'] ) ) {
+		check( ! is_file( "$dir/$name.manifest.json" ), "$name: no manifest unless the scan is ok" );
+		continue;
+	}
+	$manifests++;
+	foreach ( [ 'mcheck' => 'uid 33', 'mcheck-root' => 'root' ] as $ext => $who ) {
+		$mc = json_decode( raw( "$name.$ext" ), true );
+		check( is_array( $mc ), "$name: manifest checked as $who (" . trim( substr( raw( "$name.$ext" ), 0, 300 ) ) . ')' );
+		eq( $mc['problems'] ?? null, [], "$name: every code file is checked or under not_checked, or exempt (walked as $who)" );
+	}
+	eq( [ $mc['checked'] ?? null, $mc['not_checked'] ?? null ], [ $doc['files_checked'], $doc['files_not_checked'] ], "$name: manifest counts equal files_checked and files_not_checked" );
+	$m = json_decode( raw( "$name.manifest.json" ), true );
+	eq( $m['excluded'] ?? null, [], "$name: manifest excluded is empty" );
+}
+check( $manifests >= 40, "manifests checked: $manifests" );
+$m = json_decode( raw( 'sniff.manifest.json' ), true );
+eq( array_slice( array_keys( (array) $m ), 0, 9 ), [ 'v', 'code_extensions', 'extensions_case_insensitive', 'phar_regex', 'sniff', 'roots', 'excluded', 'old_releases', 'core' ], 'manifest: keys' );
+eq( [ $m['sniff']['bytes'] ?? null, $m['sniff']['scope'] ?? null ], [ 8192, 'except_skipped_dirs' ], 'manifest: sniff window and scope' );
+sort( $m['checked'] );
+eq(
+	$m['checked'],
+	array_map(
+		static function ( $f ) {
+			return "/var/www/htdocs/wp-content/plugins/p/$f";
+		},
+		[ 'bin/tool', 'p.php', 'tpl.php', 'views/admin.tpl', 'views/bom.html', 'views/warn.html' ]
+	),
+	'manifest: sniff checked (the link a-tpl.txt as its target tpl.php)'
+);
+eq( json_decode( raw( 'wpcfg-parent.manifest.json' ), true )['checked'] ?? null, [ '/var/www/wp-config.php', '/var/www/htdocs/wp-content/plugins/p/p.php' ], 'manifest: the parent wp-config.php WordPress loads is checked' );
+$m = json_decode( raw( 'php-rel.manifest.json' ), true );
+eq( [ $m['old_releases'] ?? null, $m['roots'] ?? null ], [ [ '/var/www/htdocs/releases/1/' ], [ '/var/www/' ] ], 'manifest: php old releases and root' );
+$m = json_decode( raw( 'full.manifest.json' ), true );
+eq( $m['core']['root'] ?? null, '/var/www/htdocs/releases/1/', 'manifest: core root is the resolved WordPress root' );
+check( ! preg_grep( '#/releases/1/(wp-includes/|wp-settings\.php$)#', $m['checked'] ?? [] ), 'manifest: root core is never checked' );
+check( in_array( '/var/www/htdocs/releases/1/wp-content/plugins/hardlink/h1.php', $m['checked'] ?? [], true ) xor in_array( '/var/www/htdocs/releases/1/wp-content/plugins/hardlink/h2.php', $m['checked'] ?? [], true ), 'manifest: a hard-linked file is listed once' );
+$m = json_decode( raw( 'nested.manifest.json' ), true );
+eq( $m['not_checked'] ?? null, [ '/var/www/htdocs/old/', '/var/www/htdocs/wp-content/plugins/fakecore/' ], 'manifest: nested installs are directory entries' );
 
 echo "\n", $count - $fails, '/', $count, " checks passed\n";
 exit( $fails ? 1 : 0 );

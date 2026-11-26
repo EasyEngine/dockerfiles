@@ -55,13 +55,19 @@ $( [ "$errors" = 1 ] && printf '%s' 'ereg( "a", "b" );' )"
 $x = utf8_encode( "a" );
 $y = utf8_decode( "b" );'
 
-	# Clean plugin, with node_modules and .git that are skipped at any depth.
+	# Clean plugin, with node_modules and .git (skipped at any depth): only their code files are checked.
 	php_file "$wc/plugins/clean/clean.php" '/**
  * Plugin Name: Clean Plugin
  */
 function clean_plugin() { return 1; }'
-	php_file "$wc/plugins/clean/node_modules/pkg/x.php" 'each( $a );'
-	php_file "$wc/plugins/clean/.git/hooks/y.php" 'each( $a );'
+	if [ "$errors" = 1 ]; then
+		php_file "$wc/plugins/clean/node_modules/pkg/x.php" 'each( $a );'
+		php_file "$wc/plugins/clean/.git/hooks/y.php" 'each( $a );'
+	else
+		mkdir -p "$wc/plugins/clean/node_modules/pkg" "$wc/plugins/clean/.git/hooks"
+		printf 'module.exports = 1;\n' > "$wc/plugins/clean/node_modules/pkg/index.js"
+		printf '#!/bin/sh\n' > "$wc/plugins/clean/.git/hooks/pre-commit.sample"
+	fi
 
 	# A plugin's own cache/, languages/ and plugins/ dirs are real code.
 	php_file "$wc/plugins/cachey/cachey.php" '/* Plugin Name: Cachey */'
@@ -154,29 +160,38 @@ $(for _ in $(seq 1 1100); do printf 'each( $a );\n'; done)"
 	ln -s plugins/legacy "$wc/alib"
 	ln -s plugins/hello.php "$wc/advanced-cache.php"
 
-	# Links to the WordPress directory, an ancestor or core: never scanned.
+	# Links to the WordPress directory or an ancestor: walked by their real path, no entry (links into core: corelink).
 	ln -s /var/www "$wc/zlib"
 	ln -s .. "$wc/core"
-	ln -s ../wp-includes "$wc/inc"
-	ln -s ../wp-settings.php "$wc/cfg.php"
 
-	# Top-level skips of the content root.
-	php_file "$wc/uploads/evil.php" 'each( $a );'
-	php_file "$wc/cache/c.php" 'each( $a );'
-	php_file "$wc/upgrade/u.php" 'each( $a );'
-	php_file "$wc/languages/l.php" 'each( $a );'
-	php_file "$wc/node_modules/n.php" 'each( $a );'
+	# Top-level skips of the content root: only their code files are checked; with none they add nothing.
+	if [ "$errors" = 1 ]; then
+		php_file "$wc/uploads/evil.php" 'each( $a );'
+		php_file "$wc/cache/c.php" 'each( $a );'
+		php_file "$wc/upgrade/u.php" 'each( $a );'
+		php_file "$wc/node_modules/n.php" 'each( $a );'
+	else
+		mkdir -p "$wc/uploads/2026/11" "$wc/cache/page" "$wc/upgrade" "$wc/node_modules/pkg"
+		printf 'GIF89a\0\0' > "$wc/uploads/2026/11/a.gif"
+		printf '<html></html>\n' > "$wc/cache/page/index.html"
+		printf 'module.exports = 1;\n' > "$wc/node_modules/pkg/index.js"
+	fi
+	# languages/ is scanned: WordPress 6.5+ includes its .l10n.php files.
+	php_file "$wc/languages/de_DE.l10n.php" "return [ 'messages' => [ 'a' => 'b' ] ];
+$bad"
 
-	# Branch layout: wp-content/main is a second content root with its own skips.
+	# Branch layout: wp-content/main is a second content root; the top-level skips apply only to wp-content itself.
 	php_file "$wc/main/plugins/branchy/branchy.php" "/**
  * Plugin Name: Branchy
  * Version: 0.1
  */
 $bad"
-	php_file "$wc/main/uploads/evil.php" 'each( $a );'
-	# Skipped by name, also when the link is dangling or leaves the mount.
-	ln -s /mnt/shared/upgrade "$wc/main/upgrade"
-	ln -s ../../../../../../elsewhere/cache "$wc/main/cache"
+	php_file "$wc/main/uploads/evil.php" "$bad"
+	# Not skipped by name in a branch: a link that dangles or leaves the mount is unreadable.
+	if [ "$errors" = 1 ]; then
+		ln -s /mnt/shared/upgrade "$wc/main/upgrade"
+		ln -s ../../../../../../elsewhere/cache "$wc/main/cache"
+	fi
 	php_file "$wc/main/lib2/x.php" 'function main_lib2() {}'
 	ln -s ../themes "$wc/main/themes"
 
@@ -197,6 +212,7 @@ php_fixture() {
 	php_file "$h/vendor/acme/Old.php" '$h = create_function( "", "" );'
 	php_file "$h/node_modules/x.php" 'each( $a );'
 	php_file "$h/.git/y.php" 'each( $a );'
+	mkdir -p "$h/assets/node_modules/pkg" && printf 'module.exports = 1;\n' > "$h/assets/node_modules/pkg/index.js"
 	chmod -R a+rX "$app"
 }
 
@@ -328,7 +344,7 @@ each( \$a );"
 	ln -s ../../vendor/acme/plug-v "$wc/plugins/plug-v"
 	ln -s ../../shared/theme-in "$wc/themes/theme-in"
 	ln -s ../../shared/mu-link.php "$wc/mu-plugins/mu-link.php"
-	# Links to core stay out.
+	# Links into the root's core are unreadable entries (r7); into another install's core, its nested_wordpress entry.
 	ln -s ../wp-includes "$wc/inc"
 	ln -s ../wp/wp-load.php "$wc/load.php"
 	ln -s ../wp-includes/version.php "$wc/core-version.php"
@@ -461,4 +477,347 @@ phpdeep_fixture() {
 	php_file "$a/project/lib/x.php" 'each( $a );'
 	ln -s project/app/public "$a/htdocs"
 	chmod -R a+rX "$a"
+}
+
+# wflogs <dir>: Wordfence 9.1.1's WAF files (tests/wflogs, written by its own code with tests/wflogs-gen.php: data files that
+# start `<?php exit('Access denied'); __halt_compiler(); ?>`, and a compiled rules.php), plus the template.php it writes.
+wflogs() {
+	mkdir -p "$1"
+	cp "$HERE"/wflogs/*.php "$1/"
+	printf "<?php exit('Access denied'); __halt_compiler(); ?>\n" > "$1/template.php"
+}
+
+# skipdirs_fixture <app-dir>: code in every directory the scanner skips by name; its code files are checked, not walked whole.
+skipdirs_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	php_file "$h/wp-settings.php"
+	mkdir -p "$h/wp-includes"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	php_file "$wc/plugins/p/node_modules/pkg/x.php" 'each( $a );'
+	php_file "$wc/plugins/p/.git/y.php" 'each( $a );'
+	# No code in it: silent, unless the search budget is gone.
+	mkdir -p "$wc/plugins/q/node_modules/pkg" && printf 'module.exports = 1;\n' > "$wc/plugins/q/node_modules/pkg/index.js"
+	wflogs "$wc/uploads/wflogs"
+	php_file "$wc/uploads/2026/11/deep/shell.PHP" 'each( $a );'
+	printf 'GIF89a\0\0<?php each( $a );' > "$wc/uploads/2026/11/a.gif"
+	printf '<?php each( $a );' > "$wc/uploads/2026/11/not-sniffed.txt"
+	# Links out of scope inside a skipped dir are ignored there too: the WordPress dir and an ancestor.
+	ln -s ../../.. "$wc/uploads/2026/up"
+	ln -s /var/www "$wc/uploads/2026/www"
+	php_file "$wc/cache/object/c.php" 'each( $a );'
+	mkdir -p "$wc/upgrade" && printf '<?php __HALT_COMPILER();' > "$wc/upgrade/pkg.phar"
+	php_file "$wc/upgrade-temp-backup/plugins/old/old.php" '/* Plugin Name: Old */'
+	php_file "$wc/node_modules/n.php" 'each( $a );'
+	php_file "$wc/.git/hooks/h.php" 'each( $a );'
+	php_file "$h/node_modules/x.php" 'each( $a );'
+	# A skipped name that dangles can't be searched.
+	ln -s /var/www/nowhere "$h/.git"
+	chmod -R a+rX "$1"
+}
+
+# wordfence_fixture <app-dir>: a clean site with Wordfence's WAF data in wflogs/ (both places it has used).
+wordfence_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$1/htdocs/wp-settings.php"
+	mkdir -p "$1/htdocs/wp-includes"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	wflogs "$wc/uploads/wflogs"
+	wflogs "$wc/wflogs"
+	printf 'GIF89a\0\0' > "$wc/uploads/a.gif"
+	chmod -R a+rX "$1"
+}
+
+# contentlike_fixture <app-dir>: a directory holding themes/ is a content root, but only wp-content has the top-level skips.
+contentlike_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/wp-settings.php"
+	mkdir -p "$h/wp-includes" "$h/tools/themes"
+	php_file "$h/tools/cache/shell.php" 'each( $a );'
+	php_file "$h/wp-content/main/plugins/b/b.php" '/* Plugin Name: B */'
+	php_file "$h/wp-content/main/uploads/u.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# pluginnm_fixture <app-dir>: a plugin dir and a theme dir named node_modules or .git are scanned like any other.
+pluginnm_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/node_modules/evil.php" '/* Plugin Name: Evil */
+each( $a );'
+	php_file "$wc/plugins/.git/g.php" 'each( $a );'
+	mkdir -p "$wc/themes/node_modules"
+	printf '/*\nTheme Name: NM\n*/\n' > "$wc/themes/node_modules/style.css"
+	php_file "$wc/themes/node_modules/functions.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# l10n_fixture <app-dir>: WordPress 6.5+ translation files in wp-content/languages are PHP.
+l10n_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/languages/de_DE.l10n.php" "return [ 'messages' => [ 'a' => 'b' ] ];"
+	php_file "$wc/languages/plugins/x-de_DE.l10n.php" 'each( $a );
+return [];'
+	printf 'msgid ""\n' > "$wc/languages/de_DE.po"
+	chmod -R a+rX "$1"
+}
+
+# sniff_fixture <app-dir>: PHP in files without a code extension, a phar, and non-PHP files.
+sniff_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	php_file "$p/views/admin.tpl" 'each( $a );'
+	mkdir -p "$p/bin" && printf '#!/usr/bin/env php\n<?php\neach( $a );\n' > "$p/bin/tool"
+	printf '\xef\xbb\xbf<?= each( $a ); ?>\n' > "$p/views/bom.html"
+	printf '<div>\n<?php each( $a ); ?>\n</div>\n' > "$p/views/page.html"
+	printf '<p>\n<?php $x = utf8_encode( "a" ); ?>\n' > "$p/views/warn.html"
+	# Never templates: docs, scripts, styles and data aren't sniffed, whatever they quote.
+	for f in README.md notes.txt app.js app.ts style.css data.json; do printf 'x <?php each( $a ); ?>\n' > "$p/$f"; done
+	{ printf '<p>\n'; head -c 1100000 /dev/zero | tr '\0' a; printf '\n'; } > "$p/big.txt"
+	{ printf 'x <?php echo 1; ?>\n'; head -c 1100000 /dev/zero | tr '\0' a; } > "$p/big-mixed.tpl"
+	printf '\x89PNG\r\n\x1a\n\0\0\0\r<?php each( $a );' > "$p/logo.png"
+	printf '{"a": "<?xml version=1.0?>"}\n' > "$p/data.json"
+	printf '<?php __HALT_COMPILER();' > "$p/lib.phar"
+	printf 'x' > "$p/lib.phar.tar.gz"
+	ln -s lib.phar "$p/a-lib.php"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/tpl.php"
+	ln -s tpl.php "$p/a-tpl.txt"
+	ln -s nowhere.phar "$p/gone.phar"
+	chmod -R a+rX "$1"
+}
+
+# nested_fixture <app-dir>: another WordPress install below the root (and inside a plugin): its core isn't skipped silently.
+nested_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	php_file "$h/wp-settings.php" 'each( $a );'
+	php_file "$h/wp-includes/load.php" 'each( $a );'
+	php_file "$h/index.php" 'each( $a );'
+	# The root's own files with other names are code.
+	php_file "$h/wp-custom.php" 'each( $a );'
+	php_file "$h/old/wp-settings.php" 'each( $a );'
+	php_file "$h/old/wp-includes/x.php" 'each( $a );'
+	php_file "$h/old/index.php" 'each( $a );'
+	php_file "$h/old/xmlrpc.php" 'each( $a );'
+	php_file "$h/old/custom.php" 'each( $a );'
+	php_file "$wc/plugins/fakecore/index.php" '/* Plugin Name: Fake Core */
+each( $a );'
+	php_file "$wc/plugins/fakecore/wp-settings.php" 'each( $a );'
+	mkdir -p "$wc/plugins/fakecore/wp-includes"
+	ln -s ../old/wp-includes "$wc/inc"
+	chmod -R a+rX "$1"
+}
+
+# hang_fixture <app-dir>: sniffed templates whose PHPCS run is cut by COMPAT_SNIFFED_TIMEOUT: a slow one, and one that
+# hangs PHPCompatibility 10.0.0-alpha3 (from CodeMirror's mode/php/test.js, MIT; PHPCS reads `<?php]` as a short tag).
+hang_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	mkdir -p "$p/views"
+	# Deterministic: plain PHP under a template name that takes PHPCS far longer than the 1 s cap the test sets.
+	{ printf '<?php\n'; for i in $(seq 1 40000); do printf '$a%d = array( 1, 2, 3 ) + [ %d ];\n' "$i" "$i"; done; } > "$p/views/slow.tpl"
+	cat > "$p/views/hang.tpl" <<'TPL'
+<p>
+<?php ?>
+     '[meta <?php] [comment /* Escaping */]',
+     '[keyword echo] [string "aaa\\$aaaa->aaa.aaa"];',
+     '[keyword echo] [string "aaa\\$aaaa[[2]]aaa.aaa"];',
+     '[keyword echo] [string "aaa\\$aaaa[[asd]]aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\$aaaa->aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\$aaaa[[2]]aaa.aaa"];',
+     '[keyword echo] [string "aaa{\\aaaaa[[asd]]aaa.aaa"];',
+     '[keyword echo] [string "aaa\\${aaaa->aaa.aaa"];',
+TPL
+	chmod -R a+rX "$1"
+}
+
+# cache_fixture <app-dir> <n>: <n> W3TC disk cache files (`<?php exit; ?>` + expiry + data), WP Super Cache legacy pages
+# (`<?php die(); ?>` + HTML), Docket Cache files (real `return` code, checked) and a header followed by another open tag.
+cache_fixture() {
+	local wc="$1/htdocs/wp-content" n=$2 d
+	php_file "$1/htdocs/wp-settings.php"
+	mkdir -p "$1/htdocs/wp-includes"
+	php_file "$wc/plugins/p/p.php" '/* Plugin Name: P */'
+	for d in $(seq 0 $(( (n - 1) / 1000 ))); do
+		mkdir -p "$wc/cache/object/$d"
+		seq $(( d * 1000 + 1 )) $(( d * 1000 + 1000 < n ? d * 1000 + 1000 : n )) | sed "s|^|$wc/cache/object/$d/|; s|\$|.php|" |
+			xargs -n 500 sh -c 'for f; do printf "<?php exit; ?>1795600000a:1:{s:3:\"key\";s:5:\"value\";}" > "$f"; done' sh
+	done
+	mkdir -p "$wc/cache/supercache" "$wc/cache/docket-cache"
+	printf '<?php die(); ?><!DOCTYPE html><html><body>cached page</body></html>' > "$wc/cache/wp-cache-1a2b.php"
+	printf "<?php exit('Access denied'); ?>\\n<html></html>" > "$wc/cache/supercache/page.php"
+	printf "<?php if(!\\\\defined('ABSPATH')){return false;}\\nreturn array('key'=>'k','group'=>'options','data'=>array('a'=>1));\\n/*@DOCKET_CACHE_EOF*/" > "$wc/cache/docket-cache/0a1b2c.php"
+	printf '<?php exit; ?>data\\n<?php each( $a );\\n' > "$wc/cache/object/tail.php"
+	# Too large to read to the end: scanned like other code, not counted as data.
+	{ printf '<?php exit; ?>'; head -c 9000000 /dev/zero | tr '\0' a; } > "$wc/cache/object/huge.php"
+	chmod -R a+rX "$1"
+}
+
+# stdin_fixture <app-dir>: files PHPCS reads through STDIN (a non-lowercase code extension, a newline in the name, a
+# sniffed file) whose first line starts with `phpcs_input_file:`, which PHPCS's STDIN reader would take as a file name and
+# drop; names that differ only in control characters on record()'s not_checked route; a skipped dir under a non-UTF-8 name.
+stdin_fixture() {
+	local p="$1/htdocs/wp-content/plugins/s" l1="phpcs_input_file: <?php \$f = create_function( '', '' );"
+	php_file "$p/s.php" '/* Plugin Name: S */'
+	printf '%s\neach( $a );\n' "$l1" > "$p/X.PHP"
+	printf '%s\r\neach( $a );\r\n' "$l1" > "$p/crlf.PHP"
+	printf '%s\reach( $a );\r' "$l1" > "$p/cr.PHP"
+	printf '%s\neach( $a );\n' "$l1" > "$p/new"$'\n'"line.php"
+	: > "$p/empty.PHP"
+	mkdir -p "$p/bin" && printf '%s\n' "$l1" > "$p/bin/tool"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/t"$'\x01'".tpl"
+	printf '<p>\n<?php each( $a ); ?>\n' > "$p/t"$'\x02'".tpl"
+	php_file "$1/htdocs/wp-content/plugins/"$'\xff'"/node_modules/x/tool" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# phpdot_fixture <app-dir> <beside|root>: a php site whose public dir is in a dot entry of /var/www (beside: htdocs ->
+# .release/public, code in .release/lib; root: htdocs -> .release), beside the www-data home's tool caches.
+phpdot_fixture() {
+	local a=$1
+	if [ "$2" = beside ]; then
+		php_file "$a/.release/public/index.php" 'require "../lib/helper.php";'
+		php_file "$a/.release/lib/helper.php" '$f = create_function( "", "" );'
+		ln -s .release/public "$a/htdocs"
+		# Code in the home: WP-CLI packages, a script without a code extension, a dot file.
+		php_file "$a/.wp-cli/packages/vendor/v/v.php" 'each( $a );'
+		php_file "$a/.composer/vendor/bin/tool" 'each( $a );'
+		php_file "$a/.user.php" 'each( $a );'
+	else
+		php_file "$a/.release/index.php" 'echo 1;'
+		ln -s .release "$a/htdocs"
+	fi
+	# No code: caches, history, docs and binaries that quote a tag.
+	mkdir -p "$a/.composer/cache/files/x" "$a/.wp-cli/cache/core" "$a/.cache" "$a/.npm/_cacache"
+	printf 'PK\3\4<?php ' > "$a/.composer/cache/files/x/a.zip"
+	printf 'x' > "$a/.wp-cli/cache/core/wordpress-7.1.4-en_US.tar.gz"
+	printf '{"a": "<?php"}' > "$a/.cache/x.json"
+	printf '\0<?php each( $a );' > "$a/.npm/_cacache/0123abcd"
+	printf 'x <?php each( $a ); ?>\n' > "$a/.cache/notes.md"
+	printf 'ls\n' > "$a/.bash_history"
+	chmod -R a+rX "$a"
+}
+
+# untraversable_fixture <app-dir>: directories uid 33 can list but not search (r without x), in a plugin and in uploads/.
+untraversable_fixture() {
+	local wc="$1/htdocs/wp-content"
+	php_file "$wc/plugins/lk/lk.php" '/* Plugin Name: LK */'
+	php_file "$wc/plugins/lk/locked/c.php" 'each( $a );'
+	php_file "$wc/plugins/lk/locked/sub/a.php" 'each( $a );'
+	php_file "$wc/plugins/lk/locked/lib.v2/b.php" 'each( $a );'
+	php_file "$wc/uploads/locked/sub/d.php" 'each( $a );'
+	php_file "$wc/uploads/locked/lib.v2/e.php" 'each( $a );'
+	chmod -R a+rX "$1"
+	chmod 0744 "$wc/plugins/lk/locked" "$wc/uploads/locked"
+}
+
+# pharflood_fixture <app-dir> <n>: n empty .phar files under long names: not_checked entries without a PHPCS run.
+pharflood_fixture() {
+	local d="$1/htdocs/wp-content/plugins/p/$(printf 'd%.0s' $(seq 1 200))"
+	php_file "$1/htdocs/wp-content/plugins/p/p.php" '/* Plugin Name: P */'
+	mkdir -p "$d"
+	(cd "$d" && seq -f "f%06g-$(printf 'n%.0s' $(seq 1 100)).phar" 1 "$2" | xargs touch)
+	chmod -R a+rX "$1"
+}
+
+# oldlink_fixture <app-dir>: a php CI/CD site whose live release links into an old release (a reused vendor/, a file, a
+# relative dir) and shared/ links there too; previous -> releases/1 beside current is a release pointer, not an include.
+oldlink_fixture() {
+	local h="$1/htdocs"
+	php_file "$h/releases/1/vendor/autoload.php" '$f = create_function( "", "" );'
+	php_file "$h/releases/1/h.php" 'each( $a );'
+	php_file "$h/releases/1/lib/l.php" 'each( $a );'
+	printf 'notes\n' > "$h/releases/1/notes.txt"
+	php_file "$h/releases/2/public/index.php" 'require "../vendor/autoload.php";'
+	ln -s /var/www/htdocs/releases/1/vendor "$h/releases/2/vendor"
+	ln -s ../1/h.php "$h/releases/2/h.php"
+	ln -s ../1/lib "$h/releases/2/lib"
+	ln -s ../1/notes.txt "$h/releases/2/notes.txt"
+	mkdir -p "$h/shared"
+	ln -s ../releases/1/vendor "$h/shared/vendor"
+	ln -s releases/2 "$h/current"
+	ln -s releases/1 "$h/previous"
+	# A top-level link into the old release (scanTop).
+	ln -s releases/1/vendor "$h/vend"
+	chmod -R a+rX "$1"
+}
+
+# corelink_fixture <app-dir>: links from plugins into the WordPress root's core (a file, a dir, a whole plugin dir), and
+# non-code-named links leaving /var/www (lib.d dangles in the scanner, part reaches a file outside the mount).
+corelink_fixture() {
+	local h="$1/htdocs" wc="$1/htdocs/wp-content"
+	php_file "$h/wp-settings.php" '// core'
+	php_file "$h/wp-includes/version.php" '// core'
+	php_file "$h/wp-includes/custom/evil.php" '$f = create_function( "", "" );'
+	php_file "$h/wp-admin/includes/x.php" '// core'
+	printf 'x\n' > "$h/wp-includes/x.txt"
+	php_file "$wc/plugins/clean/clean.php" '/* Plugin Name: Clean */'
+	ln -s ../../../wp-includes/custom/evil.php "$wc/plugins/clean/boot.php"
+	ln -s ../../../wp-admin/includes "$wc/plugins/clean/inc"
+	ln -s ../../../wp-includes/x.txt "$wc/plugins/clean/v.txt"
+	ln -s ../../wp-includes/custom "$wc/plugins/coreplug"
+	# The other walk sites: a theme dir, mu-plugins itself, a skipped name, and links found in a skipped dir.
+	mkdir -p "$wc/themes" "$wc/uploads"
+	ln -s ../../wp-includes/custom "$wc/themes/t"
+	ln -s ../wp-includes/custom "$wc/mu-plugins"
+	ln -s ../wp-includes/custom "$wc/cache"
+	ln -s ../../wp-includes/custom "$wc/uploads/d"
+	ln -s ../../wp-includes/custom/evil.php "$wc/uploads/x.php"
+	php_file "$wc/plugins/lnk/lnk.php" '/* Plugin Name: Lnk */'
+	ln -s /usr/local/etc/php/mylib "$wc/plugins/lnk/lib.d"
+	ln -s /usr/local/etc/php/php.ini-production "$wc/plugins/lnk/part"
+	ln -s /dev/stdout "$wc/plugins/lnk/debug.log"
+	# Log sinks EE accepts: exactly /dev/null, /dev/stdout, /dev/stderr, whatever the name; /dev/shm isn't one.
+	ln -s /dev/stderr "$wc/plugins/lnk/error_log"
+	ln -s /dev/stdout "$wc/plugins/lnk/access"
+	ln -s /dev/null "$wc/plugins/lnk/trace"
+	ln -s /dev/shm/lib "$wc/plugins/lnk/shm"
+	ln -s /var/log/php/x.log "$wc/plugins/lnk/out.log"
+	ln -s /nowhere/readme.txt "$wc/plugins/lnk/readme.txt"
+	chmod -R a+rX "$1"
+}
+
+# phphome_fixture <app-dir>: php dot entries of /var/www that hold no code, a dot link to a sibling code dir, dirs uid 33
+# can't open (one empty), and a dangling code-named dot link.
+phphome_fixture() {
+	local a=$1
+	php_file "$a/htdocs/index.php" 'echo 1;'
+	php_file "$a/lib/l.php" 'echo 2;'
+	ln -s lib "$a/.rel-link"
+	mkdir -p "$a/.venv/bin" "$a/.config/chromium" "$a/.emptylocked" "$a/.locked2"
+	ln -s /usr/bin/python3-nowhere "$a/.venv/bin/python"
+	ln -s host-1234 "$a/.config/chromium/SingletonLock"
+	ln -s /nowhere/.bashrc "$a/.bashrc"
+	ln -s /nowhere/x.php "$a/.x.php"
+	php_file "$a/.locked2/f.php" 'each( $a );'
+	chmod -R a+rX "$a"
+	chmod 0700 "$a/.emptylocked" "$a/.locked2"
+}
+
+# homebudget_fixture <app-dir>: a php site with a code-free dot dir and a code-free node_modules beside the code.
+homebudget_fixture() {
+	local a=$1
+	php_file "$a/htdocs/index.php" 'echo 1;'
+	mkdir -p "$a/.cache" "$a/htdocs/node_modules/a"
+	printf 'data\n' > "$a/.cache/blob.bin"
+	printf 'readme\n' > "$a/htdocs/node_modules/a/readme"
+	chmod -R a+rX "$a"
+}
+
+# slowcode_fixture <app-dir>: a code-named file that keeps PHPCompatibility looping (an unterminated nested string, as in
+# PHPCS's own DoubleQuotedStringTest.inc), beside clean files and one with an error, all in one batch.
+slowcode_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	php_file "$p/a.php" 'echo 1;'
+	printf '<?php\n"${foo["${bar\n' > "$p/slow.php"
+	php_file "$p/z.php" 'each( $a );'
+	chmod -R a+rX "$1"
+}
+
+# bigstdin_fixture <app-dir>: files PHPCS reads through STDIN: a 2 MiB one with a finding on its last line, and one over
+# the copy cap (17 MiB, mostly a comment).
+bigstdin_fixture() {
+	local p="$1/htdocs/wp-content/plugins/p"
+	php_file "$p/p.php" '/* Plugin Name: P */'
+	{ printf '<?php\n'; for i in $(seq 1 40000); do printf '$a%d = 1; // padding padding\n' "$i"; done; printf 'each( $a );\n'; } > "$p/BIG.PHP"
+	{ printf '<?php\n/*\n'; head -c 17825792 /dev/zero | tr '\0' 'x'; printf '\n*/\neach( $a );\n'; } > "$p/HUGE.PHP"
+	chmod -R a+rX "$1"
 }

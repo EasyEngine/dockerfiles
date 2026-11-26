@@ -55,6 +55,19 @@ scan() {
 	docker rm -f "ee-php-compat-test-$name" > /dev/null 2>&1 || true
 	echo "$rc" > "$RES/$name.rc"
 	if [ -f "$out/report.json" ]; then cp "$out/report.json" "$RES/$name.report.json"; fi
+	# The manifest against the tree it describes, with the manifest's own rules (tests/manifest-check.php): as uid 33,
+	# and as root with the default capabilities (DAC_OVERRIDE), which walks what uid 33 can't, as EE does.
+	if [ -f "$out/manifest.json" ]; then
+		cp "$out/manifest.json" "$RES/$name.manifest.json"
+		local who
+		for who in 33 0; do
+			docker run --rm --network none --read-only --user "$who:$who" \
+				--mount "type=bind,src=$(realpath "$app"),dst=/var/www,readonly" \
+				--mount "type=bind,src=$out/manifest.json,dst=/m.json,readonly" \
+				--mount "type=bind,src=$HERE/manifest-check.php,dst=/t/manifest-check.php,readonly" \
+				--entrypoint php "$IMAGE" /t/manifest-check.php /m.json > "$RES/$name.mcheck$( [ "$who" = 0 ] && echo -root )" 2>&1 || true
+		done
+	fi
 	(cd "$out" && find . -mindepth 1 | LC_ALL=C sort) > "$RES/$name.outdir" 2>/dev/null || sudo sh -c "cd '$out' && find . -mindepth 1" > "$RES/$name.outdir"
 	echo "scan $name: rc=$rc $(head -c 300 "$RES/$name.stdout")"
 }
@@ -248,9 +261,71 @@ estimate est-slashes "$WORK/wp" wp //var/www/htdocs//current 8.4
 scan badargs-dotdot "$WORK/wp" wp /var/www/../etc 8.4 600
 scan badargs-slashdot "$WORK/wp" wp /var/www//..//etc 8.4 600
 
-# WordPress' rollback copies in wp-content/upgrade-temp-backup/ aren't live code.
+# WordPress' rollback copies in wp-content/upgrade-temp-backup/: skipped as a dir, but their code files are checked.
 tempbackup_fixture "$WORK/tempbackup"
 scan tempbackup "$WORK/tempbackup" wp /var/www/htdocs 8.4 600
+
+# Nothing in scope is skipped silently: skipped dirs that hold code, content roots other than wp-content, plugin and theme
+# dirs named node_modules or .git, languages/, PHP under other names, phars, and other WordPress installs.
+skipdirs_fixture "$WORK/skipdirs"
+contentlike_fixture "$WORK/contentlike"
+pluginnm_fixture "$WORK/pluginnm"
+l10n_fixture "$WORK/l10n"
+sniff_fixture "$WORK/sniff"
+nested_fixture "$WORK/nested"
+wordfence_fixture "$WORK/wordfence"
+scan skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4 600
+scan skipdirs-files "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_FILES=7
+scan skipdirs-bytes "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_BYTES=5000
+scan skipdirs-time "$WORK/skipdirs" wp /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_SECONDS=0
+scan wordfence "$WORK/wordfence" wp /var/www/htdocs 8.4 600
+estimate est-skipdirs "$WORK/skipdirs" wp /var/www/htdocs 8.4
+scan skipdirs-php "$WORK/skipdirs" php /var/www/htdocs 8.4 600
+scan contentlike "$WORK/contentlike" wp /var/www/htdocs 8.4 600
+scan pluginnm "$WORK/pluginnm" wp /var/www/htdocs 8.4 600
+scan l10n "$WORK/l10n" wp /var/www/htdocs 8.4 600
+scan sniff "$WORK/sniff" wp /var/www/htdocs 8.4 600
+estimate est-sniff "$WORK/sniff" wp /var/www/htdocs 8.4
+scan sniff-php "$WORK/sniff" php /var/www/htdocs 8.4 600
+scan nested "$WORK/nested" wp /var/www/htdocs 8.4 600
+hang_fixture "$WORK/hang"
+cache_fixture "$WORK/cache" 2500
+cache_fixture "$WORK/cache50k" 50000
+scan hang "$WORK/hang" wp /var/www/htdocs 8.4 120 -e COMPAT_SNIFFED_TIMEOUT=1
+scan cache "$WORK/cache" wp /var/www/htdocs 8.4 600 -e COMPAT_DEBUG=1
+estimate est-cache "$WORK/cache" wp /var/www/htdocs 8.4
+scan cache50k "$WORK/cache50k" wp /var/www/htdocs 8.4 600
+estimate est-nested "$WORK/nested" wp /var/www/htdocs 8.4
+
+# STDIN files whose first line starts `phpcs_input_file:`, odd names on the php_tag route, php dot entries of /var/www,
+# directories uid 33 can list but not search, and many not_checked entries in little memory.
+stdin_fixture "$WORK/stdin"
+phpdot_fixture "$WORK/phpdot" beside
+phpdot_fixture "$WORK/phpdot-root" root
+untraversable_fixture "$WORK/untrav"
+pharflood_fixture "$WORK/pharflood" 20000
+scan stdin "$WORK/stdin" wp /var/www/htdocs 8.4 600
+scan phpdot "$WORK/phpdot" php /var/www/htdocs 8.4 600
+scan phpdot-root "$WORK/phpdot-root" php /var/www/htdocs 8.4 600
+scan untrav "$WORK/untrav" wp /var/www/htdocs 8.4 600
+ENTRY_MEMORY=10M scan pharflood "$WORK/pharflood" wp /var/www/htdocs 8.4 600
+
+# r7: links into old releases and core are entries; links leaving /var/www by non-asset names; php home dot dirs (dot
+# links, dirs uid 33 can't open, links that don't resolve, their own time budget); the per-file cap; the STDIN copy cap.
+oldlink_fixture "$WORK/oldlink"
+corelink_fixture "$WORK/corelink"
+phphome_fixture "$WORK/phphome"
+homebudget_fixture "$WORK/homebudget"
+slowcode_fixture "$WORK/slowcode"
+bigstdin_fixture "$WORK/bigstdin"
+scan oldlink "$WORK/oldlink" php /var/www/htdocs/current/public 8.4 600
+scan corelink "$WORK/corelink" wp /var/www/htdocs 8.4 600
+scan phphome "$WORK/phphome" php /var/www/htdocs 8.4 600
+scan homebudget-skipped0 "$WORK/homebudget" php /var/www/htdocs 8.4 600 -e COMPAT_SKIPPED_SECONDS=0
+scan homebudget-home0 "$WORK/homebudget" php /var/www/htdocs 8.4 600 -e COMPAT_HOME_SECONDS=0
+scan slowcode "$WORK/slowcode" wp /var/www/htdocs 8.4 600 -e COMPAT_FILE_TIMEOUT=5 -e COMPAT_DEBUG=1
+scan bigstdin "$WORK/bigstdin" wp /var/www/htdocs 8.4 600
+estimate est-bigstdin "$WORK/bigstdin" wp /var/www/htdocs 8.4
 
 # An estimate keeps time for calibration: throttled, the listing of 20,000 files can't finish in its share of 1 s.
 estimate est-listing "$WORK/wide" wp /var/www/htdocs 8.4 -e COMPAT_ESTIMATE_TIMEOUT=1 --cpus 0.05
